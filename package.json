@@ -1,0 +1,102 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "raycast-image-uploader",
+  "title": "Image Uploader",
+  "description": "Upload clipboard images to S3 and browse recent uploads",
+  "icon": "command-icon.png",
+  "author": "user",
+  "categories": [
+    "Developer Tools"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "upload-image",
+      "title": "Upload Image",
+      "description": "Upload clipboard image to S3 and copy URL",
+      "mode": "no-view",
+      "icon": "command-icon.png"
+    },
+    {
+      "name": "recent-uploads",
+      "title": "Recent Uploads",
+      "description": "Browse recently uploaded images",
+      "mode": "view",
+      "icon": "command-icon.png"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "s3Endpoint",
+      "title": "S3 Endpoint",
+      "description": "URL of your S3-compatible endpoint (e.g. http://100.x.x.x:9000)",
+      "type": "textfield",
+      "required": true,
+      "placeholder": "http://100.x.x.x:9000"
+    },
+    {
+      "name": "s3Bucket",
+      "title": "Bucket Name",
+      "description": "S3 bucket name",
+      "type": "textfield",
+      "required": true,
+      "placeholder": "my-bucket"
+    },
+    {
+      "name": "s3AccessKey",
+      "title": "Access Key ID",
+      "description": "S3 access key",
+      "type": "password",
+      "required": true
+    },
+    {
+      "name": "s3SecretKey",
+      "title": "Secret Access Key",
+      "description": "S3 secret key",
+      "type": "password",
+      "required": true
+    },
+    {
+      "name": "uploadWithoutAsking",
+      "title": "Upload Without Asking",
+      "description": "When enabled, uploads immediately without confirmation",
+      "type": "checkbox",
+      "label": "Upload without asking for confirmation",
+      "required": false,
+      "default": false
+    },
+    {
+      "name": "recentImageCount",
+      "title": "Recent Image Count",
+      "description": "Number of recent uploads to keep in history",
+      "type": "textfield",
+      "required": false,
+      "default": "50",
+      "placeholder": "50"
+    }
+  ],
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.817.0",
+    "@raycast/api": "^1.104.12",
+    "@raycast/utils": "^1.19.1",
+    "file-uri-to-path": "^2.0.0"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.11",
+    "@types/node": "22.13.14",
+    "@types/react": "19.0.10",
+    "eslint": "^8.57.1",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.4"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "publish": "npx @raycast/api@latest publish",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  }
+}
