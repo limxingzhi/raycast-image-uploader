@@ -32,7 +32,7 @@ src/
 
 **Data flow (upload):** Clipboard → `file://` URI → `fileUriToPath` → read file → `generateKey` (date/UUID path) → `uploadToS3` via `@aws-sdk/client-s3` → `buildObjectUrl` → copy URL to clipboard → save to history via `createHistoryManager`.
 
-**Key generation:** `{YYYY}/{MM}/{DD}/{uuid}.{ext}` — uses `crypto.randomUUID()`, extension derived from MIME type.
+**Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`, extension derived from MIME type.
 
 **History:** JSON array stored in Raycast `LocalStorage` under key `"upload-history"`. Capped at `recentImageCount` entries (default 50), newest first.
 

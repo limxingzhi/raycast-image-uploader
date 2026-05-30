@@ -46,7 +46,7 @@
       "name": "s3AccessKey",
       "title": "Access Key ID",
       "description": "S3 access key",
-      "type": "password",
+      "type": "textfield",
       "required": true
     },
     {
