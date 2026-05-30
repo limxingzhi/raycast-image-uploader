@@ -11,7 +11,7 @@ import {
   Icon,
 } from "@raycast/api";
 import { useState, useEffect, useCallback } from "react";
-import { readFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import { extname } from "path";
 import fileUriToPath from "file-uri-to-path";
 import { generateKey, uploadToS3 } from "./lib/s3";
@@ -42,6 +42,7 @@ export default function Command() {
   const [preview, setPreview] = useState<string>("");
   const [filePath, setFilePath] = useState<string>("");
   const [mimeType, setMimeType] = useState<string>("image/png");
+  const [fileSize, setFileSize] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string>("");
 
@@ -61,6 +62,13 @@ export default function Command() {
       const mime = MIME_MAP[ext] ?? "image/png";
       setFilePath(resolved);
       setMimeType(mime);
+
+      const info = await stat(resolved);
+      const size =
+        info.size < 1024 * 1024
+          ? `${(info.size / 1024).toFixed(1)} KB`
+          : `${(info.size / (1024 * 1024)).toFixed(1)} MB`;
+      setFileSize(size);
 
       const data = await readFile(resolved);
       const base64 = data.toString("base64");
@@ -130,10 +138,23 @@ export default function Command() {
     return <Detail markdown={`**${error}**`} />;
   }
 
+  const markdown = preview ? `![Preview](${preview})` : "";
+
   return (
     <Detail
+      navigationTitle="Upload Image"
       isLoading={isUploading}
-      markdown={preview ? `![Preview](${preview})` : ""}
+      markdown={markdown}
+      metadata={
+        <Detail.Metadata>
+          <Detail.Metadata.Label
+            title="Filename"
+            text={filePath.split("/").pop() ?? ""}
+          />
+          <Detail.Metadata.Label title="Size" text={fileSize} />
+          <Detail.Metadata.Label title="Type" text={mimeType} />
+        </Detail.Metadata>
+      }
       actions={
         <ActionPanel>
           <Action title="Upload" icon={Icon.Upload} onAction={handleUpload} />
