@@ -104,9 +104,21 @@ export default function RecentUploads() {
             }
             actions={
               <ActionPanel>
-                <Action.CopyToClipboard content={entry.url} title="Copy URL" />
-                <Action.Paste content={entry.url} title="Paste URL" />
-                <Action.OpenInBrowser url={entry.url} title="Open in Browser" />
+                <Action.CopyToClipboard
+                  content={entry.url}
+                  title="Copy URL"
+                  shortcut={{ key: "y", modifiers: ["cmd"] }}
+                />
+                <Action.Paste
+                  content={entry.url}
+                  title="Paste URL"
+                  shortcut={{ key: "p", modifiers: ["cmd"] }}
+                />
+                <Action.OpenInBrowser
+                  url={entry.url}
+                  title="Open in Browser"
+                  shortcut={{ key: "o", modifiers: ["cmd"] }}
+                />
                 <Action
                   title="Delete from History"
                   icon={Icon.Trash}
