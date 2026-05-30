@@ -2,6 +2,19 @@
 
 A Raycast extension that uploads clipboard images to an S3-compatible endpoint and manages upload history.
 
+## Architecture
+
+Clipboard image → `file://` URI → read from disk → upload to S3 (`{uuid}.{ext}` key) → public URL copied to clipboard → saved to local history.
+
+```
+src/
+├── upload-image.tsx      # no-view command — upload clipboard image
+├── recent-uploads.tsx    # view command — browse upload history
+└── lib/
+    ├── s3.ts             # S3 client, key generation, URL builder
+    └── history.ts        # upload history (LocalStorage-backed)
+```
+
 ## Commands
 
 ### Upload Image

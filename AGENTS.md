@@ -30,7 +30,7 @@ src/
     └── history.test.ts # Tests for history manager
 ```
 
-**Data flow (upload):** Clipboard → `file://` URI → `fileUriToPath` → read file → `generateKey` (date/UUID path) → `uploadToS3` via `@aws-sdk/client-s3` → `buildObjectUrl` → copy URL to clipboard → save to history via `createHistoryManager`.
+**Data flow (upload):** Clipboard → `file://` URI → `fileUriToPath` → read file → `generateKey` (UUID + extension) → `uploadToS3` via `@aws-sdk/client-s3` → `buildObjectUrl` → copy URL to clipboard → save to history via `createHistoryManager`.
 
 **Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`, extension derived from MIME type.
 
