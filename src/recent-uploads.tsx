@@ -109,11 +109,6 @@ export default function RecentUploads() {
                   title="Copy URL"
                   shortcut={{ key: "y", modifiers: ["cmd"] }}
                 />
-                <Action.Paste
-                  content={entry.url}
-                  title="Paste URL"
-                  shortcut={{ key: "p", modifiers: ["cmd"] }}
-                />
                 <Action.OpenInBrowser
                   url={entry.url}
                   title="Open in Browser"
@@ -121,6 +116,7 @@ export default function RecentUploads() {
                 />
                 <Action
                   title="Delete from History"
+                  shortcut={{ key: "d", modifiers: ["cmd"] }}
                   icon={Icon.Trash}
                   style={Action.Style.Destructive}
                   onAction={() => handleDelete(index)}
