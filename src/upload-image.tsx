@@ -14,7 +14,7 @@ import { useState, useEffect, useCallback } from "react";
 import { readFile, stat } from "fs/promises";
 import { extname } from "path";
 import fileUriToPath from "file-uri-to-path";
-import { generateKey, uploadToS3 } from "./lib/s3";
+import { generateKey, uploadToS3Optimistic } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
 
 const MIME_MAP: Record<string, string> = {
@@ -87,7 +87,8 @@ export default function Command() {
       try {
         const key = generateKey(mime);
         const fileData = await readFile(path);
-        const url = await uploadToS3(
+
+        const { url, upload } = uploadToS3Optimistic(
           {
             endpoint: prefs.s3Endpoint,
             bucket: prefs.s3Bucket,
@@ -114,8 +115,17 @@ export default function Command() {
           recentCount,
         );
         await history.add(url, key.split("/").pop() ?? key);
-
         await popToRoot({ clearSearchBar: true });
+
+        // Background upload — catch errors so they don't go unhandled
+        upload.catch(async (err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          await showToast({
+            style: Toast.Style.Failure,
+            title: "Upload failed",
+            message,
+          });
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         await showToast({
@@ -123,8 +133,6 @@ export default function Command() {
           title: "Upload failed",
           message,
         });
-      } finally {
-        setIsUploading(false);
       }
     },
     [prefs, recentCount],

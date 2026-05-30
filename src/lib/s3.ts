@@ -58,6 +58,15 @@ export async function uploadToS3(
   body: Buffer | Uint8Array,
   contentType: string,
 ): Promise<string> {
+  return performUpload(config, key, body, contentType);
+}
+
+async function performUpload(
+  config: S3Config,
+  key: string,
+  body: Buffer | Uint8Array,
+  contentType: string,
+): Promise<string> {
   const client = createS3Client(config);
   await client.send(
     new PutObjectCommand({
@@ -68,4 +77,15 @@ export async function uploadToS3(
     }),
   );
   return buildObjectUrl(config.endpoint, config.bucket, key);
+}
+
+export function uploadToS3Optimistic(
+  config: S3Config,
+  key: string,
+  body: Buffer | Uint8Array,
+  contentType: string,
+): { url: string; upload: Promise<string> } {
+  const url = buildObjectUrl(config.endpoint, config.bucket, key);
+  const upload = performUpload(config, key, body, contentType);
+  return { url, upload };
 }
