@@ -71,3 +71,56 @@ describe("addEntry", () => {
     expect(result[1].url).toBe("http://example.com/b.png");
   });
 });
+
+describe("remove", () => {
+  it("removes entry at given index", async () => {
+    const storage = createMockStorage();
+    const { createHistoryManager } = await import("./history");
+    const mgr = createHistoryManager(storage, 50);
+    await mgr.add("http://example.com/a.png", "a.png");
+    await mgr.add("http://example.com/b.png", "b.png");
+    await mgr.add("http://example.com/c.png", "c.png");
+    // entries are [c, b, a] (newest first)
+    await mgr.remove(1);
+    const result = await mgr.getAll();
+    expect(result).toHaveLength(2);
+    expect(result[0].url).toBe("http://example.com/c.png");
+    expect(result[1].url).toBe("http://example.com/a.png");
+  });
+
+  it("removes first entry", async () => {
+    const storage = createMockStorage();
+    const { createHistoryManager } = await import("./history");
+    const mgr = createHistoryManager(storage, 50);
+    await mgr.add("http://example.com/a.png", "a.png");
+    await mgr.add("http://example.com/b.png", "b.png");
+    // entries are [b, a]
+    await mgr.remove(0);
+    const result = await mgr.getAll();
+    expect(result).toHaveLength(1);
+    expect(result[0].url).toBe("http://example.com/a.png");
+  });
+
+  it("removes last entry", async () => {
+    const storage = createMockStorage();
+    const { createHistoryManager } = await import("./history");
+    const mgr = createHistoryManager(storage, 50);
+    await mgr.add("http://example.com/a.png", "a.png");
+    await mgr.add("http://example.com/b.png", "b.png");
+    // entries are [b, a]
+    await mgr.remove(1);
+    const result = await mgr.getAll();
+    expect(result).toHaveLength(1);
+    expect(result[0].url).toBe("http://example.com/b.png");
+  });
+
+  it("persists removal to storage", async () => {
+    const storage = createMockStorage();
+    const { createHistoryManager } = await import("./history");
+    const mgr = createHistoryManager(storage, 50);
+    await mgr.add("http://example.com/a.png", "a.png");
+    await mgr.remove(0);
+    const raw = storage.store["upload-history"];
+    expect(JSON.parse(raw)).toEqual([]);
+  });
+});

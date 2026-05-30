@@ -29,5 +29,11 @@ export function createHistoryManager(
     await storage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
   }
 
-  return { getAll, add };
+  async function remove(index: number): Promise<void> {
+    const entries = await getAll();
+    entries.splice(index, 1);
+    await storage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  }
+
+  return { getAll, add, remove };
 }

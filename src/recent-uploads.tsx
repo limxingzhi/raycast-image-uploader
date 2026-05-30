@@ -4,6 +4,11 @@ import {
   ActionPanel,
   getPreferenceValues,
   LocalStorage,
+  showToast,
+  Toast,
+  Icon,
+  confirmAlert,
+  Alert,
 } from "@raycast/api";
 import { useState, useEffect } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
@@ -16,27 +21,47 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
 }
 
+async function getHistory() {
+  const prefs = getPreferenceValues<Preferences>();
+  const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
+  return createHistoryManager(
+    {
+      getItem: (k) => LocalStorage.getItem<string>(k),
+      setItem: (k, v) => LocalStorage.setItem(k, v),
+    },
+    recentCount,
+  );
+}
+
 export default function RecentUploads() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const prefs = getPreferenceValues<Preferences>();
-      const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
-      const history = createHistoryManager(
-        {
-          getItem: (k) => LocalStorage.getItem<string>(k),
-          setItem: (k, v) => LocalStorage.setItem(k, v),
-        },
-        recentCount,
-      );
+      const history = await getHistory();
       const all = await history.getAll();
       setEntries(all);
       setIsLoading(false);
     }
     load();
   }, []);
+
+  async function handleDelete(index: number) {
+    if (
+      !(await confirmAlert({
+        title: "Delete from History",
+        message: "Remove this upload from history? The file in S3 will not be deleted.",
+        primaryAction: { title: "Delete", style: Alert.ActionStyle.Destructive },
+      }))
+    ) {
+      return;
+    }
+    const history = await getHistory();
+    await history.remove(index);
+    setEntries(await history.getAll());
+    await showToast({ style: Toast.Style.Success, title: "Deleted from history" });
+  }
 
   return (
     <List
@@ -82,6 +107,12 @@ export default function RecentUploads() {
                 <Action.CopyToClipboard content={entry.url} title="Copy URL" />
                 <Action.Paste content={entry.url} title="Paste URL" />
                 <Action.OpenInBrowser url={entry.url} title="Open in Browser" />
+                <Action
+                  title="Delete from History"
+                  icon={Icon.Trash}
+                  style={Action.Style.Destructive}
+                  onAction={() => handleDelete(index)}
+                />
               </ActionPanel>
             }
           />
