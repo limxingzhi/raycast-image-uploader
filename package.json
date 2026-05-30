@@ -14,7 +14,7 @@
       "name": "upload-image",
       "title": "Upload Image",
       "description": "Upload clipboard image to S3 and copy URL",
-      "mode": "no-view"
+      "mode": "view"
     },
     {
       "name": "recent-uploads",

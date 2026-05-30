@@ -1,22 +1,22 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 
 describe("generateKey", () => {
   it("generates a UUID key with png extension for image/png", async () => {
     const { generateKey } = await import("./s3");
     const key = generateKey("image/png");
-    expect(key).toMatch(/^[0-9a-f-]+\.png$/);
+    expect(key).toMatch(/^\d{4}\/\d{2}\/\d{2}\/[0-9a-f-]+\.png$/);
   });
 
   it("uses jpeg extension for image/jpeg", async () => {
     const { generateKey } = await import("./s3");
     const key = generateKey("image/jpeg");
-    expect(key).toMatch(/^[0-9a-f-]+\.jpeg$/);
+    expect(key).toMatch(/^\d{4}\/\d{2}\/\d{2}\/[0-9a-f-]+\.jpeg$/);
   });
 
   it("defaults to png for unknown mime type", async () => {
     const { generateKey } = await import("./s3");
     const key = generateKey("image/webp");
-    expect(key).toMatch(/^[0-9a-f-]+\.png$/);
+    expect(key).toMatch(/^\d{4}\/\d{2}\/\d{2}\/[0-9a-f-]+\.png$/);
   });
 });
 
@@ -50,11 +50,7 @@ describe("extensionFromMime", () => {
 describe("buildObjectUrl", () => {
   it("constructs URL from endpoint, bucket, and key", async () => {
     const { buildObjectUrl } = await import("./s3");
-    const url = buildObjectUrl(
-      "http://100.x.x.x:9000",
-      "my-bucket",
-      "abc.png",
-    );
+    const url = buildObjectUrl("http://100.x.x.x:9000", "my-bucket", "abc.png");
     expect(url).toBe("http://100.x.x.x:9000/my-bucket/abc.png");
   });
 
