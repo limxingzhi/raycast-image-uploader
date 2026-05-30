@@ -10,7 +10,7 @@ import {
   LocalStorage,
   Icon,
 } from "@raycast/api";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { readFile, stat } from "fs/promises";
 import { extname } from "path";
 import fileUriToPath from "file-uri-to-path";
@@ -46,6 +46,7 @@ export default function Command() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string>("");
 
+  const uploadingRef = useRef(false);
   const prefs = getPreferenceValues<Preferences>();
   const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
 
@@ -83,6 +84,8 @@ export default function Command() {
 
   const doUpload = useCallback(
     async (path: string, mime: string) => {
+      if (uploadingRef.current) return;
+      uploadingRef.current = true;
       setIsUploading(true);
       try {
         const key = generateKey(mime);
@@ -114,7 +117,7 @@ export default function Command() {
           },
           recentCount,
         );
-        await history.add(url, key.split("/").pop() ?? key);
+        await history.add(url, key);
         await popToRoot({ clearSearchBar: true });
 
         // Background upload — catch errors so they don't go unhandled
@@ -133,6 +136,8 @@ export default function Command() {
           title: "Upload failed",
           message,
         });
+      } finally {
+        uploadingRef.current = false;
       }
     },
     [prefs, recentCount],
@@ -165,7 +170,7 @@ export default function Command() {
       }
       actions={
         <ActionPanel>
-          <Action title="Upload" icon={Icon.Upload} onAction={handleUpload} />
+          {!isUploading && <Action title="Upload" icon={Icon.Upload} onAction={handleUpload} />}
         </ActionPanel>
       }
     />
