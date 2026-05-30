@@ -14,13 +14,15 @@
       "name": "upload-image",
       "title": "Upload Image",
       "description": "Upload clipboard image to S3 and copy URL",
-      "mode": "view"
+      "mode": "view",
+      "icon": "upload-image.png"
     },
     {
       "name": "recent-uploads",
       "title": "Recent Uploads",
       "description": "Browse recently uploaded images",
-      "mode": "view"
+      "mode": "view",
+      "icon": "recent-uploads.png"
     }
   ],
   "preferences": [
