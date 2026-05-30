@@ -2,7 +2,6 @@ import {
   List,
   Action,
   ActionPanel,
-  Icon,
   getPreferenceValues,
   LocalStorage,
 } from "@raycast/api";
@@ -11,6 +10,10 @@ import { createHistoryManager, HistoryEntry } from "./lib/history";
 
 interface Preferences {
   recentImageCount: string;
+}
+
+function formatDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
 }
 
 export default function RecentUploads() {
@@ -36,25 +39,54 @@ export default function RecentUploads() {
   }, []);
 
   return (
-    <List isLoading={isLoading} searchBarPlaceholder="Search recent uploads...">
-      {entries.map((entry, index) => (
-        <List.Item
-          key={index}
-          title={entry.filename}
-          subtitle={entry.url}
-          icon={{ source: Icon.Image, tooltip: entry.filename }}
-          accessories={[
-            { date: new Date(entry.timestamp), tooltip: "Uploaded" },
-          ]}
-          actions={
-            <ActionPanel>
-              <Action.CopyToClipboard content={entry.url} title="Copy URL" />
-              <Action.Paste content={entry.url} title="Paste URL" />
-              <Action.OpenInBrowser url={entry.url} title="Open in Browser" />
-            </ActionPanel>
-          }
-        />
-      ))}
+    <List
+      isLoading={isLoading}
+      isShowingDetail
+      searchBarPlaceholder="Search recent uploads..."
+    >
+      <List.Section title="Recent Uploads">
+        {entries.map((entry, index) => (
+          <List.Item
+            key={index}
+            id={String(index)}
+            title={entry.filename}
+            icon={{ source: entry.url, tooltip: entry.filename }}
+            accessories={[
+              { date: new Date(entry.timestamp), tooltip: "Uploaded" },
+            ]}
+            detail={
+              <List.Item.Detail
+                markdown={`![${entry.filename}](${entry.url})`}
+                metadata={
+                  <List.Item.Detail.Metadata>
+                    <List.Item.Detail.Metadata.Label
+                      title="Filename"
+                      text={entry.filename}
+                    />
+                    <List.Item.Detail.Metadata.Label
+                      title="Uploaded"
+                      text={formatDate(entry.timestamp)}
+                    />
+                    <List.Item.Detail.Metadata.Separator />
+                    <List.Item.Detail.Metadata.Link
+                      title="URL"
+                      target={entry.url}
+                      text={entry.url}
+                    />
+                  </List.Item.Detail.Metadata>
+                }
+              />
+            }
+            actions={
+              <ActionPanel>
+                <Action.CopyToClipboard content={entry.url} title="Copy URL" />
+                <Action.Paste content={entry.url} title="Paste URL" />
+                <Action.OpenInBrowser url={entry.url} title="Open in Browser" />
+              </ActionPanel>
+            }
+          />
+        ))}
+      </List.Section>
     </List>
   );
 }

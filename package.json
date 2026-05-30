@@ -3,8 +3,8 @@
   "name": "raycast-image-uploader",
   "title": "Image Uploader",
   "description": "Upload clipboard images to S3 and browse recent uploads",
-  "icon": "command-icon.png",
   "author": "user",
+  "icon": "extension-icon.png",
   "categories": [
     "Developer Tools"
   ],
@@ -14,15 +14,13 @@
       "name": "upload-image",
       "title": "Upload Image",
       "description": "Upload clipboard image to S3 and copy URL",
-      "mode": "no-view",
-      "icon": "command-icon.png"
+      "mode": "no-view"
     },
     {
       "name": "recent-uploads",
       "title": "Recent Uploads",
       "description": "Browse recently uploaded images",
-      "mode": "view",
-      "icon": "command-icon.png"
+      "mode": "view"
     }
   ],
   "preferences": [
