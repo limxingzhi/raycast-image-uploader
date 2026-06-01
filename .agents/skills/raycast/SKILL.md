@@ -7,6 +7,7 @@ compatibility: No special requirements
 metadata:
   author: terminal-skills
   version: 1.0.0
+  source: https://github.com/TerminalSkills/skills/tree/main/skills/raycast
   category: development
   tags: launcher, productivity, macos, extensions, react
 ---
