@@ -35,6 +35,7 @@ export default function Command() {
   const [error, setError] = useState<string>("");
 
   const uploadingRef = useRef(false);
+  const fileDataRef = useRef<Buffer>(Buffer.alloc(0));
   const prefs = getPreferenceValues<Preferences>();
   const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
 
@@ -57,6 +58,7 @@ export default function Command() {
       setFileSize(size);
 
       const data = await readFile(resolved);
+      fileDataRef.current = data;
 
       const detected =
         typeFromExtension(resolved) ?? typeFromContent(new Uint8Array(data)) ?? "application/octet-stream";
@@ -94,7 +96,7 @@ export default function Command() {
       setIsUploading(true);
       try {
         const key = generateKey(detected);
-        const fileData = await readFile(path);
+        const fileData = fileDataRef.current;
 
         const { url, upload } = uploadToS3Optimistic(
           {
