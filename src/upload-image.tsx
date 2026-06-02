@@ -12,22 +12,10 @@ import {
 } from "@raycast/api";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { readFile, stat } from "fs/promises";
-import { extname } from "path";
 import fileUriToPath from "file-uri-to-path";
+import { typeFromExtension, typeFromContent } from "./lib/mime";
 import { generateKey, uploadToS3Optimistic } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
-
-const MIME_MAP: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".tiff": "image/tiff",
-  ".tif": "image/tiff",
-  ".bmp": "image/bmp",
-  ".svg": "image/svg+xml",
-  ".webp": "image/webp",
-};
 
 interface Preferences {
   s3Endpoint: string;
@@ -41,7 +29,7 @@ interface Preferences {
 export default function Command() {
   const [preview, setPreview] = useState<string>("");
   const [filePath, setFilePath] = useState<string>("");
-  const [mimeType, setMimeType] = useState<string>("image/png");
+  const [mimeType, setMimeType] = useState<string>("application/octet-stream");
   const [fileSize, setFileSize] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string>("");
@@ -54,15 +42,12 @@ export default function Command() {
     async function loadPreview() {
       const { file } = await Clipboard.read();
       if (!file) {
-        setError("No image found in clipboard");
+        setError("No file found in clipboard");
         return;
       }
 
       const resolved = fileUriToPath(file);
-      const ext = extname(resolved).toLowerCase();
-      const mime = MIME_MAP[ext] ?? "image/png";
       setFilePath(resolved);
-      setMimeType(mime);
 
       const info = await stat(resolved);
       const size =
@@ -72,23 +57,45 @@ export default function Command() {
       setFileSize(size);
 
       const data = await readFile(resolved);
-      const base64 = data.toString("base64");
-      setPreview(`data:${mime};base64,${base64}`);
+
+      const detected =
+        typeFromExtension(resolved) ?? typeFromContent(new Uint8Array(data)) ?? "application/octet-stream";
+      setMimeType(detected);
+
+      if (detected.startsWith("image/")) {
+        const base64 = data.toString("base64");
+        setPreview(`data:${detected};base64,${base64}`);
+      } else if (!data.includes(0) && data.length > 0) {
+        // Text content — render inline
+        const content = data.toString("utf-8");
+        const ext = resolved.split("/").pop()?.toLowerCase() || "";
+        if (detected === "text/markdown") {
+          setPreview(content);
+        } else if (ext === "md" || ext === "markdown") {
+          setPreview(content);
+        } else if (ext) {
+          setPreview(`\`\`\`${ext}\n${content}\n\`\`\``);
+        } else {
+          setPreview(`\`\`\`\n${content}\n\`\`\``);
+        }
+      } else {
+        setPreview("");
+      }
 
       if (prefs.uploadWithoutAsking) {
-        await doUpload(resolved, mime);
+        await doUpload(resolved, detected);
       }
     }
     loadPreview();
   }, []);
 
   const doUpload = useCallback(
-    async (path: string, mime: string) => {
+    async (path: string, detected: string) => {
       if (uploadingRef.current) return;
       uploadingRef.current = true;
       setIsUploading(true);
       try {
-        const key = generateKey(mime);
+        const key = generateKey(detected);
         const fileData = await readFile(path);
 
         const { url, upload } = uploadToS3Optimistic(
@@ -100,7 +107,7 @@ export default function Command() {
           },
           key,
           fileData,
-          mime,
+          detected,
         );
 
         await Clipboard.copy({ text: url });
@@ -151,7 +158,11 @@ export default function Command() {
     return <Detail markdown={`**${error}**`} />;
   }
 
-  const markdown = preview ? `![Preview](${preview})` : "";
+  const markdown = !preview
+    ? `# ${filePath.split("/").pop() || "File"}\n\n**Type:** ${mimeType}  \n**Size:** ${fileSize}`
+    : preview.startsWith("data:")
+      ? `![Preview](${preview})`
+      : preview;
 
   return (
     <Detail

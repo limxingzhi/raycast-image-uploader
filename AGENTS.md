@@ -32,7 +32,7 @@ src/
 
 **Data flow (upload):** Clipboard → `file://` URI → `fileUriToPath` → read file → `generateKey` (UUID + extension) → `uploadToS3` via `@aws-sdk/client-s3` → `buildObjectUrl` → copy URL to clipboard → save to history via `createHistoryManager`.
 
-**Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`, extension derived from MIME type.
+**Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`, extension derived from MIME type via `mime.getExtension`.
 
 **History:** JSON array stored in Raycast `LocalStorage` under key `"upload-history"`. Capped at `recentImageCount` entries (default 50), newest first.
 
@@ -61,7 +61,7 @@ src/
 
 ## Gotchas
 
-- The `extensionFromMime` map in `s3.ts` does not include `image/webp` or `image/bmp` — these fall through to the `"png"` default, even though `upload-image.tsx` has them in `MIME_MAP`. If you add a new image format, update both maps.
+- MIME types derived dynamically via `mime` package (broofa/mime v2). No manual maps to maintain. Unknown types fall back to `application/octet-stream` / `"bin"`.
 - `Clipboard.read()` returns a `file://` URI, not a path — `file-uri-to-path` converts it. Don't use the URI directly with `fs.readFile`.
 - `uploadWithoutAsking` is a checkbox preference but typed as `boolean` in the Preferences interface. Other preferences typed as `string` (including `recentImageCount`) need `parseInt`.
 - S3 object URL is constructed client-side as `{endpoint}/{bucket}/{key}` — there's no presigned URL or redirect. The bucket and objects must be publicly accessible for the URL to work.

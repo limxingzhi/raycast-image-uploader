@@ -13,16 +13,16 @@ describe("generateKey", () => {
     expect(key).toMatch(/^[0-9a-f-]+\.png$/);
   });
 
-  it("uses jpeg extension for image/jpeg", async () => {
+  it("uses jpg extension for image/jpeg", async () => {
     const { generateKey } = await import("./s3");
     const key = generateKey("image/jpeg");
-    expect(key).toMatch(/^[0-9a-f-]+\.jpeg$/);
+    expect(key).toMatch(/^[0-9a-f-]+\.jpg$/);
   });
 
-  it("defaults to png for unknown mime type", async () => {
+  it("defaults to bin for unknown mime type", async () => {
     const { generateKey } = await import("./s3");
-    const key = generateKey("image/webp");
-    expect(key).toMatch(/^[0-9a-f-]+\.png$/);
+    const key = generateKey("application/vnd.unknown");
+    expect(key).toMatch(/^[0-9a-f-]+\.bin$/);
   });
 });
 
@@ -32,9 +32,14 @@ describe("extensionFromMime", () => {
     expect(extensionFromMime("image/png")).toBe("png");
   });
 
-  it("returns jpeg for image/jpeg", async () => {
+  it("returns pdf for application/pdf", async () => {
     const { extensionFromMime } = await import("./s3");
-    expect(extensionFromMime("image/jpeg")).toBe("jpeg");
+    expect(extensionFromMime("application/pdf")).toBe("pdf");
+  });
+
+  it("returns jpg for image/jpeg", async () => {
+    const { extensionFromMime } = await import("./s3");
+    expect(extensionFromMime("image/jpeg")).toBe("jpg");
   });
 
   it("returns gif for image/gif", async () => {
@@ -47,9 +52,9 @@ describe("extensionFromMime", () => {
     expect(extensionFromMime("image/tiff")).toBe("tiff");
   });
 
-  it("returns png for unknown mime type", async () => {
+  it("returns bin for unknown mime type", async () => {
     const { extensionFromMime } = await import("./s3");
-    expect(extensionFromMime("image/avif")).toBe("png");
+    expect(extensionFromMime("application/vnd.unknown")).toBe("bin");
   });
 });
 
