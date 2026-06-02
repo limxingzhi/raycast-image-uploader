@@ -65,6 +65,19 @@ export default function Command() {
       if (detected.startsWith("image/")) {
         const base64 = data.toString("base64");
         setPreview(`data:${detected};base64,${base64}`);
+      } else if (!data.includes(0) && data.length > 0) {
+        // Text content — render inline
+        const content = data.toString("utf-8");
+        const ext = resolved.split("/").pop()?.toLowerCase() || "";
+        if (detected === "text/markdown") {
+          setPreview(content);
+        } else if (ext === "md" || ext === "markdown") {
+          setPreview(content);
+        } else if (ext) {
+          setPreview(`\`\`\`${ext}\n${content}\n\`\`\``);
+        } else {
+          setPreview(`\`\`\`\n${content}\n\`\`\``);
+        }
       } else {
         setPreview("");
       }
@@ -145,9 +158,11 @@ export default function Command() {
     return <Detail markdown={`**${error}**`} />;
   }
 
-  const markdown = preview
-    ? `![Preview](${preview})`
-    : `# ${filePath.split("/").pop() || "File"}\n\n**Type:** ${mimeType}  \n**Size:** ${fileSize}`;
+  const markdown = !preview
+    ? `# ${filePath.split("/").pop() || "File"}\n\n**Type:** ${mimeType}  \n**Size:** ${fileSize}`
+    : preview.startsWith("data:")
+      ? `![Preview](${preview})`
+      : preview;
 
   return (
     <Detail

@@ -12,6 +12,7 @@ import {
 } from "@raycast/api";
 import { useState, useEffect } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
+import { typeFromExtension } from "./lib/mime";
 
 interface Preferences {
   recentImageCount: string;
@@ -81,7 +82,11 @@ export default function RecentUploads() {
             ]}
             detail={
               <List.Item.Detail
-                markdown={`![${entry.filename}](${entry.url})`}
+                markdown={
+                  typeFromExtension(entry.filename)?.startsWith("image/")
+                    ? `![${entry.filename}](${entry.url})`
+                    : `# ${entry.filename}\n\n[Open in Browser](${entry.url})`
+                }
                 metadata={
                   <List.Item.Detail.Metadata>
                     <List.Item.Detail.Metadata.Label
