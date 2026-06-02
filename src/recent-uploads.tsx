@@ -10,7 +10,7 @@ import {
   confirmAlert,
   Alert,
 } from "@raycast/api";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
 import { typeFromExtension } from "./lib/mime";
 
@@ -37,6 +37,8 @@ async function getHistory() {
 export default function RecentUploads() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const previews = useRef<Map<string, string>>(new Map());
+  const [, forceUpdate] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -44,6 +46,26 @@ export default function RecentUploads() {
       const all = await history.getAll();
       setEntries(all);
       setIsLoading(false);
+
+      // Fetch text previews for non-image files
+      for (const entry of all) {
+        const mime = typeFromExtension(entry.filename);
+        if (!mime?.startsWith("image/")) {
+          fetch(entry.url)
+            .then((r) => r.text())
+            .then((text) => {
+              const ext = entry.filename.split(".").pop()?.toLowerCase() || "";
+              const md = ext === "md" || ext === "markdown"
+                ? text
+                : `\`\`\`${ext}\n${text}\n\`\`\``;
+              previews.current.set(entry.url, md);
+              forceUpdate((n) => n + 1);
+            })
+            .catch(() => {
+              // Silently fail — just won't show a preview
+            });
+        }
+      }
     }
     load();
   }, []);
@@ -85,7 +107,7 @@ export default function RecentUploads() {
                 markdown={
                   typeFromExtension(entry.filename)?.startsWith("image/")
                     ? `![${entry.filename}](${entry.url})`
-                    : `# ${entry.filename}\n\n[Open in Browser](${entry.url})`
+                    : previews.current.get(entry.url) ?? `# ${entry.filename}\n\n[Open in Browser](${entry.url})`
                 }
                 metadata={
                   <List.Item.Detail.Metadata>
