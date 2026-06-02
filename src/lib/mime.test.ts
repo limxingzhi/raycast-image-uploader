@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { typeFromExtension, extensionFromMime } from "./mime";
+import { typeFromExtension, extensionFromMime, typeFromContent } from "./mime";
 
 describe("typeFromExtension", () => {
   it("returns image/png for .png path", () => {
@@ -74,5 +74,46 @@ describe("extensionFromMime", () => {
 
   it("strips parameters from MIME type", () => {
     expect(extensionFromMime("image/png; charset=utf-8")).toBe("png");
+  });
+});
+
+describe("typeFromContent", () => {
+  it("detects PNG from magic bytes", () => {
+    const buf = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    expect(typeFromContent(buf)).toBe("image/png");
+  });
+
+  it("detects JPEG from magic bytes", () => {
+    const buf = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    expect(typeFromContent(buf)).toBe("image/jpeg");
+  });
+
+  it("detects GIF from magic bytes", () => {
+    const buf = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+    expect(typeFromContent(buf)).toBe("image/gif");
+  });
+
+  it("detects PDF from magic bytes", () => {
+    const buf = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+    expect(typeFromContent(buf)).toBe("application/pdf");
+  });
+
+  it("detects ZIP from magic bytes", () => {
+    const buf = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    expect(typeFromContent(buf)).toBe("application/zip");
+  });
+
+  it("detects GZIP from magic bytes", () => {
+    const buf = new Uint8Array([0x1f, 0x8b]);
+    expect(typeFromContent(buf)).toBe("application/gzip");
+  });
+
+  it("returns null for unsupported content", () => {
+    const buf = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
+    expect(typeFromContent(buf)).toBeNull();
+  });
+
+  it("returns null for empty buffer", () => {
+    expect(typeFromContent(new Uint8Array([]))).toBeNull();
   });
 });

@@ -13,7 +13,7 @@ import {
 import { useState, useEffect, useCallback, useRef } from "react";
 import { readFile, stat } from "fs/promises";
 import fileUriToPath from "file-uri-to-path";
-import { typeFromExtension } from "./lib/mime";
+import { typeFromExtension, typeFromContent } from "./lib/mime";
 import { generateKey, uploadToS3Optimistic } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
 
@@ -47,9 +47,7 @@ export default function Command() {
       }
 
       const resolved = fileUriToPath(file);
-      const detected = typeFromExtension(resolved) ?? "application/octet-stream";
       setFilePath(resolved);
-      setMimeType(detected);
 
       const info = await stat(resolved);
       const size =
@@ -59,6 +57,10 @@ export default function Command() {
       setFileSize(size);
 
       const data = await readFile(resolved);
+
+      const detected =
+        typeFromExtension(resolved) ?? typeFromContent(new Uint8Array(data)) ?? "application/octet-stream";
+      setMimeType(detected);
 
       if (detected.startsWith("image/")) {
         const base64 = data.toString("base64");
