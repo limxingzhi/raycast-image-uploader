@@ -2,8 +2,6 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
 import { extensionFromMime } from "./mime";
 
-export { extensionFromMime };
-
 export function generateKey(mimeType: string): string {
   const ext = extensionFromMime(mimeType);
   const uuid = randomUUID();
@@ -14,9 +12,12 @@ export function buildObjectUrl(
   endpoint: string,
   bucket: string,
   key: string,
+  pathStyle = true,
 ): string {
   const base = endpoint.replace(/\/+$/, "");
-  return `${base}/${bucket}/${key}`;
+  return pathStyle
+    ? `${base}/${bucket}/${key}`
+    : `${base.replace("://", `://${bucket}.`)}/${key}`;
 }
 
 export interface S3Config {
@@ -38,23 +39,15 @@ export function createS3Client(config: S3Config): S3Client {
   });
 }
 
-export async function uploadToS3(
-  config: S3Config,
-  key: string,
-  body: Buffer | Uint8Array,
-  contentType: string,
-): Promise<string> {
-  return performUpload(config, key, body, contentType);
-}
-
 async function performUpload(
   config: S3Config,
   key: string,
   body: Buffer | Uint8Array,
   contentType: string,
+  client?: S3Client,
 ): Promise<string> {
-  const client = createS3Client(config);
-  await client.send(
+  const s3 = client ?? createS3Client(config);
+  await s3.send(
     new PutObjectCommand({
       Bucket: config.bucket,
       Key: key,
@@ -70,8 +63,9 @@ export function uploadToS3Optimistic(
   key: string,
   body: Buffer | Uint8Array,
   contentType: string,
+  client?: S3Client,
 ): { url: string; upload: Promise<string> } {
   const url = buildObjectUrl(config.endpoint, config.bucket, key);
-  const upload = performUpload(config, key, body, contentType);
+  const upload = performUpload(config, key, body, contentType, client);
   return { url, upload };
 }

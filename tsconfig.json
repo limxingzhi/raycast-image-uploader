@@ -1,8 +1,6 @@
 {
   "compilerOptions": {
-    "allowJs": true,
     "allowSyntheticDefaultImports": true,
-    "downlevelIteration": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
@@ -15,11 +13,7 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "es2022",
-    "useDefineForClassFields": true,
-    "paths": {
-      "@raycast/api": ["./node_modules/@raycast/api"],
-      "@raycast/utils": ["./node_modules/@raycast/utils"]
-    }
+    "useDefineForClassFields": true
   },
   "include": ["src/**/*"]
 }

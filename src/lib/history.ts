@@ -18,7 +18,11 @@ export function createHistoryManager(
   async function getAll(): Promise<HistoryEntry[]> {
     const raw = await storage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw) as HistoryEntry[];
+    try {
+      return JSON.parse(raw) as HistoryEntry[];
+    } catch {
+      return [];
+    }
   }
 
   async function add(url: string, filename: string): Promise<void> {
@@ -31,6 +35,7 @@ export function createHistoryManager(
 
   async function remove(index: number): Promise<void> {
     const entries = await getAll();
+    if (index < 0 || index >= entries.length) return;
     entries.splice(index, 1);
     await storage.setItem(STORAGE_KEY, JSON.stringify(entries));
   }

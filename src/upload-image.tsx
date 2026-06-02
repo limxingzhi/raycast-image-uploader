@@ -12,21 +12,13 @@ import {
 } from "@raycast/api";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { readFile, stat } from "fs/promises";
-import fileUriToPath from "file-uri-to-path";
+import { fileURLToPath } from "url";
 import { typeFromExtension, typeFromContent } from "./lib/mime";
-import { generateKey, uploadToS3Optimistic } from "./lib/s3";
+import { generateKey, uploadToS3Optimistic, createS3Client } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
 
-interface Preferences {
-  s3Endpoint: string;
-  s3Bucket: string;
-  s3AccessKey: string;
-  s3SecretKey: string;
-  uploadWithoutAsking: boolean;
-  recentImageCount: string;
-}
-
 export default function Command() {
+  const MAX_PREVIEW_SIZE = 50 * 1024 * 1024; // 50 MB — reject files larger than this
   const [preview, setPreview] = useState<string>("");
   const [filePath, setFilePath] = useState<string>("");
   const [mimeType, setMimeType] = useState<string>("application/octet-stream");
@@ -35,9 +27,22 @@ export default function Command() {
   const [error, setError] = useState<string>("");
 
   const uploadingRef = useRef(false);
-  const fileDataRef = useRef<Buffer>(Buffer.alloc(0));
-  const prefs = getPreferenceValues<Preferences>();
+  const fileDataRef = useRef<Buffer | null>(null);
+  const prefs = getPreferenceValues<Preferences.UploadImage>();
   const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
+  const s3ClientRef = useRef(createS3Client({
+    endpoint: prefs.s3Endpoint,
+    bucket: prefs.s3Bucket,
+    accessKeyId: prefs.s3AccessKey,
+    secretAccessKey: prefs.s3SecretKey,
+  }));
+  const historyRef = useRef(createHistoryManager(
+    {
+      getItem: (k) => LocalStorage.getItem<string>(k),
+      setItem: (k, v) => LocalStorage.setItem(k, v),
+    },
+    recentCount,
+  ));
 
   useEffect(() => {
     async function loadPreview() {
@@ -47,10 +52,14 @@ export default function Command() {
         return;
       }
 
-      const resolved = fileUriToPath(file);
+      const resolved = fileURLToPath(file);
       setFilePath(resolved);
 
       const info = await stat(resolved);
+      if (info.size > MAX_PREVIEW_SIZE) {
+        setError(`File too large (${(info.size / (1024 * 1024)).toFixed(0)} MB). Max preview size is ${MAX_PREVIEW_SIZE / (1024 * 1024)} MB.`);
+        return;
+      }
       const size =
         info.size < 1024 * 1024
           ? `${(info.size / 1024).toFixed(1)} KB`
@@ -96,7 +105,7 @@ export default function Command() {
       setIsUploading(true);
       try {
         const key = generateKey(detected);
-        const fileData = fileDataRef.current;
+        const fileData = fileDataRef.current!;
 
         const { url, upload } = uploadToS3Optimistic(
           {
@@ -108,34 +117,22 @@ export default function Command() {
           key,
           fileData,
           detected,
+          s3ClientRef.current,
         );
 
+        // Copy URL optimistically — user can try it immediately
         await Clipboard.copy({ text: url });
+
+        // Wait for the actual upload to finish before recording history
+        await upload;
+
+        await historyRef.current.add(url, key);
         await showToast({
           style: Toast.Style.Success,
-          title: "URL copied to clipboard",
+          title: "Uploaded",
           message: url,
         });
-
-        const history = createHistoryManager(
-          {
-            getItem: (k) => LocalStorage.getItem<string>(k),
-            setItem: (k, v) => LocalStorage.setItem(k, v),
-          },
-          recentCount,
-        );
-        await history.add(url, key);
         await popToRoot({ clearSearchBar: true });
-
-        // Background upload — catch errors so they don't go unhandled
-        upload.catch(async (err) => {
-          const message = err instanceof Error ? err.message : String(err);
-          await showToast({
-            style: Toast.Style.Failure,
-            title: "Upload failed",
-            message,
-          });
-        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         await showToast({
@@ -147,11 +144,11 @@ export default function Command() {
         uploadingRef.current = false;
       }
     },
-    [prefs, recentCount],
+    [prefs],
   );
 
-  const handleUpload = useCallback(() => {
-    doUpload(filePath, mimeType);
+  const handleUpload = useCallback(async () => {
+    await doUpload(filePath, mimeType);
   }, [doUpload, filePath, mimeType]);
 
   if (error) {
