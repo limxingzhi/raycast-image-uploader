@@ -116,4 +116,16 @@ describe("typeFromContent", () => {
   it("returns null for empty buffer", () => {
     expect(typeFromContent(new Uint8Array([]))).toBeNull();
   });
+
+  it("does not false-positive HEIC when RIFF box size is invalid", () => {
+    // Bytes 4-11 match "ftypheic" but bytes 0-3 are too small to be a valid box
+    const buf = new Uint8Array([0x00, 0x00, 0x00, 0x01, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]);
+    expect(typeFromContent(buf)).toBeNull();
+  });
+
+  it("does not false-positive AVIF when RIFF box size is invalid", () => {
+    // Bytes 4-11 match "ftypavif" but bytes 0-3 are too small to be a valid box
+    const buf = new Uint8Array([0x00, 0x00, 0x00, 0x01, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
+    expect(typeFromContent(buf)).toBeNull();
+  });
 });

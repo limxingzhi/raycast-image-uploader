@@ -41,9 +41,13 @@ export default function RecentUploads() {
   const [, forceUpdate] = useState(0);
 
   useEffect(() => {
+    const abort = new AbortController();
+    let mounted = true;
+
     async function load() {
       const history = await getHistory();
       const all = await history.getAll();
+      if (!mounted) return;
       setEntries(all);
       setIsLoading(false);
 
@@ -51,9 +55,10 @@ export default function RecentUploads() {
       for (const entry of all) {
         const mime = typeFromExtension(entry.filename);
         if (!mime?.startsWith("image/")) {
-          fetch(entry.url)
+          fetch(entry.url, { signal: abort.signal })
             .then((r) => r.text())
             .then((text) => {
+              if (!mounted) return;
               const ext = entry.filename.split(".").pop()?.toLowerCase() || "";
               const md = ext === "md" || ext === "markdown"
                 ? text
@@ -68,6 +73,11 @@ export default function RecentUploads() {
       }
     }
     load();
+
+    return () => {
+      mounted = false;
+      abort.abort();
+    };
   }, []);
 
   async function handleDelete(index: number) {
