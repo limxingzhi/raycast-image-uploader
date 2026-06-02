@@ -25,6 +25,14 @@ If "Upload Without Asking" is disabled (default), you'll see a confirmation dial
 ### Recent Uploads
 Browse your recently uploaded images. Select one to copy or paste its URL.
 
+### Screenshots
+
+![Upload Image and Recent Uploads commands](media/commands.png)
+
+![Uploading to an S3-compatible rustfs instance](media/upload-confirmation.jpeg)
+
+> Confirmation dialog before uploading to the S3-compatible backend.
+
 ## Configuration
 
 | Preference | Description |
