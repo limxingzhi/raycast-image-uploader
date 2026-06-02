@@ -6,6 +6,21 @@ vi.mock("@aws-sdk/client-s3", () => ({
   PutObjectCommand: vi.fn(),
 }));
 
+vi.mock("mime", () => ({
+  default: {
+    getExtension: vi.fn((mimeType: string) => {
+      const map: Record<string, string> = {
+        "image/png": "png",
+        "image/jpeg": "jpeg",
+        "image/gif": "gif",
+        "image/tiff": "tiff",
+        "application/pdf": "pdf",
+      };
+      return map[mimeType] ?? null;
+    }),
+  },
+}));
+
 describe("generateKey", () => {
   it("generates a UUID key with png extension for image/png", async () => {
     const { generateKey } = await import("./s3");
@@ -19,10 +34,10 @@ describe("generateKey", () => {
     expect(key).toMatch(/^[0-9a-f-]+\.jpeg$/);
   });
 
-  it("defaults to png for unknown mime type", async () => {
+  it("defaults to bin for unknown mime type", async () => {
     const { generateKey } = await import("./s3");
     const key = generateKey("image/webp");
-    expect(key).toMatch(/^[0-9a-f-]+\.png$/);
+    expect(key).toMatch(/^[0-9a-f-]+\.bin$/);
   });
 });
 
@@ -30,6 +45,11 @@ describe("extensionFromMime", () => {
   it("returns png for image/png", async () => {
     const { extensionFromMime } = await import("./s3");
     expect(extensionFromMime("image/png")).toBe("png");
+  });
+
+  it("returns pdf for application/pdf", async () => {
+    const { extensionFromMime } = await import("./s3");
+    expect(extensionFromMime("application/pdf")).toBe("pdf");
   });
 
   it("returns jpeg for image/jpeg", async () => {
@@ -47,9 +67,9 @@ describe("extensionFromMime", () => {
     expect(extensionFromMime("image/tiff")).toBe("tiff");
   });
 
-  it("returns png for unknown mime type", async () => {
+  it("returns bin for unknown mime type", async () => {
     const { extensionFromMime } = await import("./s3");
-    expect(extensionFromMime("image/avif")).toBe("png");
+    expect(extensionFromMime("image/avif")).toBe("bin");
   });
 });
 

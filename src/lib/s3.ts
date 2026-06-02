@@ -1,17 +1,9 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
-
-const MIME_TO_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpeg",
-  "image/gif": "gif",
-  "image/tiff": "tiff",
-  "image/bmp": "bmp",
-  "image/svg+xml": "svg",
-};
+import mime from "mime";
 
 export function extensionFromMime(mimeType: string): string {
-  return MIME_TO_EXT[mimeType] ?? "png";
+  return mime.getExtension(mimeType) ?? "bin";
 }
 
 export function generateKey(mimeType: string): string {
