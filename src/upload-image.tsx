@@ -13,7 +13,7 @@ import {
 import { useState, useEffect, useCallback, useRef } from "react";
 import { readFile, stat } from "fs/promises";
 import fileUriToPath from "file-uri-to-path";
-import mime from "mime";
+import { typeFromExtension } from "./lib/mime";
 import { generateKey, uploadToS3Optimistic } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
 
@@ -47,7 +47,7 @@ export default function Command() {
       }
 
       const resolved = fileUriToPath(file);
-      const detected = mime.getType(resolved) ?? "application/octet-stream";
+      const detected = typeFromExtension(resolved) ?? "application/octet-stream";
       setFilePath(resolved);
       setMimeType(detected);
 

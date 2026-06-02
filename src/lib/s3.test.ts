@@ -6,21 +6,6 @@ vi.mock("@aws-sdk/client-s3", () => ({
   PutObjectCommand: vi.fn(),
 }));
 
-vi.mock("mime", () => ({
-  default: {
-    getExtension: vi.fn((mimeType: string) => {
-      const map: Record<string, string> = {
-        "image/png": "png",
-        "image/jpeg": "jpeg",
-        "image/gif": "gif",
-        "image/tiff": "tiff",
-        "application/pdf": "pdf",
-      };
-      return map[mimeType] ?? null;
-    }),
-  },
-}));
-
 describe("generateKey", () => {
   it("generates a UUID key with png extension for image/png", async () => {
     const { generateKey } = await import("./s3");
@@ -28,15 +13,15 @@ describe("generateKey", () => {
     expect(key).toMatch(/^[0-9a-f-]+\.png$/);
   });
 
-  it("uses jpeg extension for image/jpeg", async () => {
+  it("uses jpg extension for image/jpeg", async () => {
     const { generateKey } = await import("./s3");
     const key = generateKey("image/jpeg");
-    expect(key).toMatch(/^[0-9a-f-]+\.jpeg$/);
+    expect(key).toMatch(/^[0-9a-f-]+\.jpg$/);
   });
 
   it("defaults to bin for unknown mime type", async () => {
     const { generateKey } = await import("./s3");
-    const key = generateKey("image/webp");
+    const key = generateKey("application/vnd.unknown");
     expect(key).toMatch(/^[0-9a-f-]+\.bin$/);
   });
 });
@@ -52,9 +37,9 @@ describe("extensionFromMime", () => {
     expect(extensionFromMime("application/pdf")).toBe("pdf");
   });
 
-  it("returns jpeg for image/jpeg", async () => {
+  it("returns jpg for image/jpeg", async () => {
     const { extensionFromMime } = await import("./s3");
-    expect(extensionFromMime("image/jpeg")).toBe("jpeg");
+    expect(extensionFromMime("image/jpeg")).toBe("jpg");
   });
 
   it("returns gif for image/gif", async () => {
@@ -69,7 +54,7 @@ describe("extensionFromMime", () => {
 
   it("returns bin for unknown mime type", async () => {
     const { extensionFromMime } = await import("./s3");
-    expect(extensionFromMime("image/avif")).toBe("bin");
+    expect(extensionFromMime("application/vnd.unknown")).toBe("bin");
   });
 });
 

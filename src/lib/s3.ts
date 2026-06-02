@@ -1,10 +1,8 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
-import mime from "mime";
+import { extensionFromMime } from "./mime";
 
-export function extensionFromMime(mimeType: string): string {
-  return mime.getExtension(mimeType) ?? "bin";
-}
+export { extensionFromMime };
 
 export function generateKey(mimeType: string): string {
   const ext = extensionFromMime(mimeType);
