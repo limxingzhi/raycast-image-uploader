@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { typeFromExtension, extensionFromMime, typeFromContent } from "./mime";
+import { typeFromExtension, extensionFromMime, typeFromContent, isTextPreviewable } from "./mime";
 
 describe("typeFromExtension", () => {
   it("returns image/png for .png path", () => {
@@ -127,5 +127,51 @@ describe("typeFromContent", () => {
     // Bytes 4-11 match "ftypavif" but bytes 0-3 are too small to be a valid box
     const buf = new Uint8Array([0x00, 0x00, 0x00, 0x01, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
     expect(typeFromContent(buf)).toBeNull();
+  });
+});
+
+describe("isTextPreviewable", () => {
+  it("returns true for text/plain", () => {
+    expect(isTextPreviewable("text/plain")).toBe(true);
+  });
+
+  it("returns true for text/html", () => {
+    expect(isTextPreviewable("text/html")).toBe(true);
+  });
+
+  it("returns true for application/json", () => {
+    expect(isTextPreviewable("application/json")).toBe(true);
+  });
+
+  it("returns true for application/javascript", () => {
+    expect(isTextPreviewable("application/javascript")).toBe(true);
+  });
+
+  it("returns true for application/typescript", () => {
+    expect(isTextPreviewable("application/typescript")).toBe(true);
+  });
+
+  it("returns true for text/jsx", () => {
+    expect(isTextPreviewable("text/jsx")).toBe(true);
+  });
+
+  it("returns false for application/pdf", () => {
+    expect(isTextPreviewable("application/pdf")).toBe(false);
+  });
+
+  it("returns false for application/zip", () => {
+    expect(isTextPreviewable("application/zip")).toBe(false);
+  });
+
+  it("returns false for image/png", () => {
+    expect(isTextPreviewable("image/png")).toBe(false);
+  });
+
+  it("returns false for audio/mpeg", () => {
+    expect(isTextPreviewable("audio/mpeg")).toBe(false);
+  });
+
+  it("returns false for video/mp4", () => {
+    expect(isTextPreviewable("video/mp4")).toBe(false);
   });
 });

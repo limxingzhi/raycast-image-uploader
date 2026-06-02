@@ -8,9 +8,10 @@ Clipboard image → `file://` URI → read from disk → upload to S3 (`{uuid}.{
 
 ```
 src/
-├── upload-image.tsx      # no-view command — upload clipboard image
+├── upload-image.tsx      # view command — confirm and upload clipboard image
 ├── recent-uploads.tsx    # view command — browse upload history
 └── lib/
+    ├── mime.ts           # MIME detection (extension + magic bytes)
     ├── s3.ts             # S3 client, key generation, URL builder
     └── history.ts        # upload history (LocalStorage-backed)
 ```

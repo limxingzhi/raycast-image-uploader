@@ -12,62 +12,59 @@ import {
 } from "@raycast/api";
 import { useState, useEffect, useRef } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
-import { typeFromExtension } from "./lib/mime";
-
-interface Preferences {
-  recentImageCount: string;
-}
+import { typeFromExtension, isTextPreviewable } from "./lib/mime";
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
 }
 
-async function getHistory() {
-  const prefs = getPreferenceValues<Preferences>();
+const MAX_PREVIEW_SIZE = 5 * 1024 * 1024; // 5 MB — skip text previews for larger files
+
+export default function RecentUploads() {
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const prefs = getPreferenceValues<Preferences.RecentUploads>();
   const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
-  return createHistoryManager(
+  const historyRef = useRef(createHistoryManager(
     {
       getItem: (k) => LocalStorage.getItem<string>(k),
       setItem: (k, v) => LocalStorage.setItem(k, v),
     },
     recentCount,
-  );
-}
-
-export default function RecentUploads() {
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const previews = useRef<Map<string, string>>(new Map());
-  const [, forceUpdate] = useState(0);
+  ));
 
   useEffect(() => {
     const abort = new AbortController();
     let mounted = true;
 
     async function load() {
-      const history = await getHistory();
-      const all = await history.getAll();
+      const all = await historyRef.current.getAll();
       if (!mounted) return;
       setEntries(all);
       setIsLoading(false);
 
-      // Fetch text previews for non-image files
+      // Fetch text previews for text-based files under the size limit
       for (const entry of all) {
         const mime = typeFromExtension(entry.filename);
-        if (!mime?.startsWith("image/")) {
+        if (mime && isTextPreviewable(mime)) {
           fetch(entry.url, { signal: abort.signal })
-            .then((r) => r.text())
+            .then(async (r) => {
+              if (!r.ok) return;
+              const len = parseInt(r.headers.get("content-length") ?? "", 10);
+              if (!isNaN(len) && len > MAX_PREVIEW_SIZE) return; // too large, skip
+              return r.text();
+            })
             .then((text) => {
-              if (!mounted) return;
+              if (!text || !mounted) return;
               const ext = entry.filename.split(".").pop()?.toLowerCase() || "";
               const md = ext === "md" || ext === "markdown"
                 ? text
                 : `\`\`\`${ext}\n${text}\n\`\`\``;
-              previews.current.set(entry.url, md);
-              forceUpdate((n) => n + 1);
+              setPreviews((prev) => ({ ...prev, [entry.url]: md }));
             })
             .catch(() => {
-              // Silently fail — just won't show a preview
+              // Preview failed — won't show text preview for this entry
             });
         }
       }
@@ -80,7 +77,10 @@ export default function RecentUploads() {
     };
   }, []);
 
-  async function handleDelete(index: number) {
+  async function handleDelete(url: string, timestamp: number) {
+    const all = await historyRef.current.getAll();
+    const index = all.findIndex((e) => e.url === url && e.timestamp === timestamp);
+    if (index === -1) return;
     if (
       !(await confirmAlert({
         title: "Delete from History",
@@ -90,9 +90,8 @@ export default function RecentUploads() {
     ) {
       return;
     }
-    const history = await getHistory();
-    await history.remove(index);
-    setEntries(await history.getAll());
+    await historyRef.current.remove(index);
+    setEntries(await historyRef.current.getAll());
     await showToast({ style: Toast.Style.Success, title: "Deleted from history" });
   }
 
@@ -103,10 +102,10 @@ export default function RecentUploads() {
       searchBarPlaceholder="Search recent uploads..."
     >
       <List.Section title="Recent Uploads">
-        {entries.map((entry, index) => (
+        {entries.map((entry) => (
           <List.Item
-            key={index}
-            id={String(index)}
+            key={`${entry.url}-${entry.timestamp}`}
+            id={`${entry.url}-${entry.timestamp}`}
             title={entry.filename}
             icon={{ source: entry.url, tooltip: entry.filename }}
             accessories={[
@@ -117,7 +116,7 @@ export default function RecentUploads() {
                 markdown={
                   typeFromExtension(entry.filename)?.startsWith("image/")
                     ? `![${entry.filename}](${entry.url})`
-                    : previews.current.get(entry.url) ?? `# ${entry.filename}\n\n[Open in Browser](${entry.url})`
+                    : previews[entry.url] ?? `# ${entry.filename}\n\n[Open in Browser](${entry.url})`
                 }
                 metadata={
                   <List.Item.Detail.Metadata>
@@ -156,7 +155,7 @@ export default function RecentUploads() {
                   shortcut={{ key: "d", modifiers: ["cmd"] }}
                   icon={Icon.Trash}
                   style={Action.Style.Destructive}
-                  onAction={() => handleDelete(index)}
+                  onAction={() => handleDelete(entry.url, entry.timestamp)}
                 />
               </ActionPanel>
             }

@@ -156,3 +156,20 @@ export function extensionFromMime(mimeType: string): string {
   const clean = mimeType.split(";")[0].trim().toLowerCase();
   return MIME_TO_EXT[clean] ?? "bin";
 }
+
+const TEXT_PREVIEWABLE = new Set([
+  "application/javascript",
+  "application/json",
+  "application/typescript",
+  "application/xml",
+  "application/yaml",
+  "application/toml",
+  "text/jsx",
+  "text/typescript-jsx",
+]);
+
+/** Whether the MIME type is safe to fetch and display as an inline text preview. */
+export function isTextPreviewable(mime: string): boolean {
+  if (mime.startsWith("text/")) return true;
+  return TEXT_PREVIEWABLE.has(mime);
+}
