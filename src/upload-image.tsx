@@ -46,6 +46,14 @@ export default function Command() {
 
   useEffect(() => {
     async function loadPreview() {
+      if (prefs.s3Endpoint.startsWith("http://")) {
+        await showToast({
+          style: Toast.Style.Failure,
+          title: "Warning: HTTP endpoint",
+          message: "Credentials and files transmitted in plaintext. Use HTTPS in production.",
+        });
+      }
+
       const { file } = await Clipboard.read();
       if (!file) {
         setError("No file found in clipboard");
@@ -77,16 +85,10 @@ export default function Command() {
         const base64 = data.toString("base64");
         setPreview(`data:${detected};base64,${base64}`);
       } else if (!data.includes(0) && data.length > 0) {
-        // Text content — render inline
+        // Text content — render in code fence to prevent markdown injection
         const content = data.toString("utf-8");
         const ext = resolved.split("/").pop()?.toLowerCase() || "";
-        if (ext === "md" || ext === "markdown") {
-          setPreview(content);
-        } else if (ext) {
-          setPreview(`\`\`\`${ext}\n${content}\n\`\`\``);
-        } else {
-          setPreview(`\`\`\`\n${content}\n\`\`\``);
-        }
+        setPreview(`\`\`\`${ext}\n${content}\n\`\`\``);
       } else {
         setPreview("");
       }
@@ -125,6 +127,7 @@ export default function Command() {
 
         // Wait for the actual upload to finish before recording history
         await upload;
+        fileDataRef.current = null;
 
         await historyRef.current.add(url, key);
         await showToast({
@@ -134,11 +137,13 @@ export default function Command() {
         });
         await popToRoot({ clearSearchBar: true });
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        console.error("Upload failed:", err);
+        fileDataRef.current = null;
+        await Clipboard.copy({ text: "" });
         await showToast({
           style: Toast.Style.Failure,
           title: "Upload failed",
-          message,
+          message: "Check your S3 configuration and try again.",
         });
       } finally {
         uploadingRef.current = false;

@@ -45,6 +45,9 @@ src/
 - **`forcePathStyle: true`** on S3Client — required for self-hosted/S3-compatible endpoints that don't support virtual-hosted-style URLs. The `buildObjectUrl` function has a `pathStyle` parameter (default `true`) for URL-style parity.
 - **Region is hardcoded** to `"us-east-1"` in `createS3Client` — this is a placeholder since most S3-compatible backends ignore it.
 - **S3Client is reused** across uploads via a ref in the command component, avoiding TLS handshake overhead per upload.
+- **Streaming text preview fetch:** `fetchTextPreview()` in `recent-uploads.tsx` uses `ReadableStream.getReader()` to accumulate chunks and aborts once `MAX_PREVIEW_SIZE` (5 MB) is exceeded. This prevents OOM from servers that omit `content-length` or use chunked transfer encoding.
+- **Sanitized error messages:** Full errors are logged via `console.error` but user-facing toasts show a generic message ("Check your S3 configuration and try again.") to prevent leaking internal paths, AWS endpoint URLs, or access key IDs in screenshots.
+- **Markdown injection prevention:** All file content previews are wrapped in fenced code blocks (` ``` `) regardless of file extension, preventing untrusted file content from rendering as markdown links, images, or other syntax.
 
 ## Testing
 
@@ -67,4 +70,6 @@ src/
 - `Clipboard.read()` returns a `file://` URI, not a path — `url.fileURLToPath` converts it. Don't use the URI directly with `fs.readFile`.
 - Textfield preferences like `recentImageCount` are strings — must `parseInt` before use. Checkbox preferences (e.g. `uploadWithoutAsking`) are booleans natively.
 - S3 object URL is constructed client-side as `{endpoint}/{bucket}/{key}` (path-style, default) or `{bucket}.{endpoint}/{key}` (virtual-hosted, `pathStyle: false`). There's no presigned URL or redirect. The bucket and objects must be publicly accessible for the URL to work.
-- The upload follows an optimistic pattern: URL is copied to clipboard immediately, but the history entry and success toast only appear after the S3 PUT completes.
+- The upload follows an optimistic pattern: URL is copied to clipboard immediately, but the history entry and success toast only appear after the S3 PUT completes. On failure, the clipboard is cleared and the in-memory file buffer is released.
+- File content previews are always wrapped in fenced code blocks to prevent markdown injection — even `.md` files render as raw code rather than rendered markdown.
+- `fetchTextPreview` (recent-uploads.tsx) uses a streaming reader with a 5 MB cap. `r.text()` is never used directly, as S3 may omit `content-length` or use chunked encoding.
