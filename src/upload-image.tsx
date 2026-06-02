@@ -69,9 +69,7 @@ export default function Command() {
         // Text content — render inline
         const content = data.toString("utf-8");
         const ext = resolved.split("/").pop()?.toLowerCase() || "";
-        if (detected === "text/markdown") {
-          setPreview(content);
-        } else if (ext === "md" || ext === "markdown") {
+        if (ext === "md" || ext === "markdown") {
           setPreview(content);
         } else if (ext) {
           setPreview(`\`\`\`${ext}\n${content}\n\`\`\``);
