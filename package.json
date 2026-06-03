@@ -29,7 +29,7 @@
     {
       "name": "s3Endpoint",
       "title": "S3 Endpoint",
-      "description": "URL of your S3-compatible endpoint (e.g. http://100.x.x.x:9000)",
+      "description": "URL of your S3-compatible endpoint (e.g. http://100.x.x.x:9000). Use HTTPS in production to protect credentials in transit.",
       "type": "textfield",
       "required": true,
       "placeholder": "http://100.x.x.x:9000"

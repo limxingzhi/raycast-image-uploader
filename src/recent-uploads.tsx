@@ -20,6 +20,31 @@ function formatDate(timestamp: number): string {
 
 const MAX_PREVIEW_SIZE = 5 * 1024 * 1024; // 5 MB — skip text previews for larger files
 
+/** Fetch a text preview, capping the response body at MAX_PREVIEW_SIZE bytes. */
+async function fetchTextPreview(
+  entry: HistoryEntry,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const r = await fetch(entry.url, { signal });
+  if (!r.ok || !r.body) return null;
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let result = "";
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > MAX_PREVIEW_SIZE) return null; // too large, abort
+      result += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return result;
+}
+
 export default function RecentUploads() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,19 +73,11 @@ export default function RecentUploads() {
       for (const entry of all) {
         const mime = typeFromExtension(entry.filename);
         if (mime && isTextPreviewable(mime)) {
-          fetch(entry.url, { signal: abort.signal })
-            .then(async (r) => {
-              if (!r.ok) return;
-              const len = parseInt(r.headers.get("content-length") ?? "", 10);
-              if (!isNaN(len) && len > MAX_PREVIEW_SIZE) return; // too large, skip
-              return r.text();
-            })
+          fetchTextPreview(entry, abort.signal)
             .then((text) => {
               if (!text || !mounted) return;
               const ext = entry.filename.split(".").pop()?.toLowerCase() || "";
-              const md = ext === "md" || ext === "markdown"
-                ? text
-                : `\`\`\`${ext}\n${text}\n\`\`\``;
+              const md = `\`\`\`${ext}\n${text}\n\`\`\``;
               setPreviews((prev) => ({ ...prev, [entry.url]: md }));
             })
             .catch(() => {
@@ -107,7 +124,10 @@ export default function RecentUploads() {
             key={`${entry.url}-${entry.timestamp}`}
             id={`${entry.url}-${entry.timestamp}`}
             title={entry.filename}
-            icon={{ source: entry.url, tooltip: entry.filename }}
+            icon={{
+              source: typeFromExtension(entry.filename)?.startsWith("image/") ? entry.url : Icon.Document,
+              tooltip: entry.filename,
+            }}
             accessories={[
               { date: new Date(entry.timestamp), tooltip: "Uploaded" },
             ]}
