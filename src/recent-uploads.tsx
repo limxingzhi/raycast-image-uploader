@@ -13,6 +13,7 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
 import { typeFromExtension, isTextPreviewable } from "./lib/mime";
+import { isObjectUrlTrusted } from "./lib/s3";
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
@@ -72,7 +73,7 @@ export default function RecentUploads() {
       // Fetch text previews for text-based files under the size limit
       for (const entry of all) {
         const mime = typeFromExtension(entry.filename);
-        if (mime && isTextPreviewable(mime)) {
+        if (mime && isTextPreviewable(mime) && isObjectUrlTrusted(entry.url, prefs.s3Endpoint)) {
           fetchTextPreview(entry, abort.signal)
             .then((text) => {
               if (!text || !mounted) return;

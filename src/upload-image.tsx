@@ -124,6 +124,11 @@ export default function Command() {
 
         // Copy URL optimistically — user can try it immediately
         await Clipboard.copy({ text: url });
+        await showToast({
+          style: Toast.Style.Animated,
+          title: "Uploading…",
+          message: "URL copied to clipboard while upload completes.",
+        });
 
         // Wait for the actual upload to finish before recording history
         await upload;

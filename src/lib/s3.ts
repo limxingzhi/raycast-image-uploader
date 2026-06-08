@@ -58,6 +58,19 @@ async function performUpload(
   return buildObjectUrl(config.endpoint, config.bucket, key);
 }
 
+/**
+ * SSRF guard: returns true if `objectUrl` shares the same origin as the
+ * configured S3 `endpoint`. Prevents fetching from arbitrary URLs stored
+ * in history (e.g. metadata services, internal hosts).
+ */
+export function isObjectUrlTrusted(objectUrl: string, endpoint: string): boolean {
+  try {
+    return new URL(objectUrl).origin === new URL(endpoint).origin;
+  } catch {
+    return false;
+  }
+}
+
 export function uploadToS3Optimistic(
   config: S3Config,
   key: string,

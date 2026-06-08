@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import type { S3Config } from "./s3";
 import { extensionFromMime } from "./mime";
-import { generateKey, buildObjectUrl, uploadToS3Optimistic } from "./s3";
+import { generateKey, buildObjectUrl, uploadToS3Optimistic, isObjectUrlTrusted } from "./s3";
 import { S3Client } from "@aws-sdk/client-s3";
 
 vi.mock("@aws-sdk/client-s3", () => ({
@@ -75,6 +75,48 @@ describe("buildObjectUrl", () => {
       false,
     );
     expect(url).toBe("https://my-bucket.s3.amazonaws.com/abc.png");
+  });
+});
+
+describe("isObjectUrlTrusted", () => {
+  it("returns true when object URL matches endpoint origin", () => {
+    expect(isObjectUrlTrusted("http://minio:9000/images/abc.png", "http://minio:9000")).toBe(true);
+  });
+
+  it("returns true when object URL matches endpoint origin with path", () => {
+    expect(isObjectUrlTrusted("http://minio:9000/bucket/key.txt", "http://minio:9000/some/path")).toBe(true);
+  });
+
+  it("returns false when endpoint port differs", () => {
+    expect(isObjectUrlTrusted("http://minio:9001/images/abc.png", "http://minio:9000")).toBe(false);
+  });
+
+  it("returns false when endpoint protocol differs (HTTP vs HTTPS)", () => {
+    expect(isObjectUrlTrusted("https://minio:9000/images/abc.png", "http://minio:9000")).toBe(false);
+  });
+
+  it("returns false when endpoint host differs", () => {
+    expect(isObjectUrlTrusted("http://evil.com/images/abc.png", "http://minio:9000")).toBe(false);
+  });
+
+  it("returns false for metadata service URL", () => {
+    expect(isObjectUrlTrusted("http://169.254.169.254/latest/meta-data/", "http://minio:9000")).toBe(false);
+  });
+
+  it("returns false for malformed object URL", () => {
+    expect(isObjectUrlTrusted("not-a-url", "http://minio:9000")).toBe(false);
+  });
+
+  it("returns false for malformed endpoint URL", () => {
+    expect(isObjectUrlTrusted("http://minio:9000/key.png", "not-a-url")).toBe(false);
+  });
+
+  it("returns false for empty strings", () => {
+    expect(isObjectUrlTrusted("", "http://minio:9000")).toBe(false);
+  });
+
+  it("returns true for same localhost endpoint", () => {
+    expect(isObjectUrlTrusted("http://127.0.0.1:9000/bucket/key.png", "http://127.0.0.1:9000")).toBe(true);
   });
 });
 
