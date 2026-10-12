@@ -15,5 +15,5 @@
     "target": "es2022",
     "useDefineForClassFields": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "raycast-env.d.ts"]
 }

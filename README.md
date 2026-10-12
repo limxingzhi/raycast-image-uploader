@@ -13,7 +13,7 @@ A Raycast extension that uploads clipboard images to an S3-compatible endpoint a
 
 ## Architecture
 
-Clipboard → `file://` URI → `url.fileURLToPath` → read from disk → MIME detection (extension → magic bytes) → key generation (`{uuid}.{ext}`) → optimistic URL copy → S3 PUT → history save.
+Clipboard → `Clipboard.read().file` (a `file://` URL or a plain path, normalized by `clipboardFileToPath`) → read from disk → MIME detection (extension → magic bytes) → key generation (`{uuid}.{ext}`) → optimistic URL copy → S3 PUT → history save. When the clipboard holds a raw image with no backing file (e.g. a screenshot), the image is extracted to a temp PNG via `osascript` first.
 
 ```
 src/
@@ -22,6 +22,8 @@ src/
 └── lib/
     ├── mime.ts           # MIME detection (extension + magic bytes)
     ├── s3.ts             # S3 client, key generation, URL builder
+    ├── clipboard.ts      # Normalizes clipboard file value to a path
+    ├── clipboard-image.ts # Extracts raw clipboard images via osascript (macOS)
     └── history.ts        # upload history (LocalStorage-backed)
 ```
 

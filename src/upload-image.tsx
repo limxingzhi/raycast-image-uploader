@@ -11,9 +11,10 @@ import {
   Icon,
 } from "@raycast/api";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { readFile, stat } from "fs/promises";
-import { fileURLToPath } from "url";
+import { readFile, rm, stat } from "fs/promises";
 import { typeFromExtension, typeFromContent } from "./lib/mime";
+import { clipboardFileToPath } from "./lib/clipboard";
+import { extractClipboardImageToTempFile } from "./lib/clipboard-image";
 import { generateKey, uploadToS3Optimistic, createS3Client } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
 
@@ -55,49 +56,67 @@ export default function Command() {
       }
 
       const { file } = await Clipboard.read();
-      if (!file) {
-        setError("No file found in clipboard");
-        return;
-      }
+      let resolved: string;
+      let cleanupDir: string | undefined;
 
-      const resolved = fileURLToPath(file);
-      setFilePath(resolved);
-
-      const info = await stat(resolved);
-      if (info.size > MAX_PREVIEW_SIZE) {
-        setError(`File too large (${(info.size / (1024 * 1024)).toFixed(0)} MB). Max preview size is ${MAX_PREVIEW_SIZE / (1024 * 1024)} MB.`);
-        return;
-      }
-      const size =
-        info.size < 1024 * 1024
-          ? `${(info.size / 1024).toFixed(1)} KB`
-          : `${(info.size / (1024 * 1024)).toFixed(1)} MB`;
-      setFileSize(size);
-
-      const data = await readFile(resolved);
-      fileDataRef.current = data;
-
-      const detected =
-        typeFromExtension(resolved) ?? typeFromContent(new Uint8Array(data)) ?? "application/octet-stream";
-      setMimeType(detected);
-
-      if (detected.startsWith("image/")) {
-        const base64 = data.toString("base64");
-        setPreview(`data:${detected};base64,${base64}`);
-      } else if (!data.includes(0) && data.length > 0) {
-        // Text content — render in code fence to prevent markdown injection
-        const content = data.toString("utf-8");
-        const ext = resolved.split("/").pop()?.toLowerCase() || "";
-        setPreview(`\`\`\`${ext}\n${content}\n\`\`\``);
+      if (file) {
+        resolved = clipboardFileToPath(file);
       } else {
-        setPreview("");
+        const extracted = await extractClipboardImageToTempFile();
+        if (!extracted) {
+          setError("No image found in clipboard. Copy an image or take a screenshot first.");
+          return;
+        }
+        resolved = extracted.path;
+        cleanupDir = extracted.cleanupDir;
       }
 
-      if (prefs.uploadWithoutAsking) {
-        await doUpload(resolved, detected);
+      try {
+        setFilePath(resolved);
+
+        const info = await stat(resolved);
+        if (info.size > MAX_PREVIEW_SIZE) {
+          setError(`File too large (${(info.size / (1024 * 1024)).toFixed(0)} MB). Max preview size is ${MAX_PREVIEW_SIZE / (1024 * 1024)} MB.`);
+          return;
+        }
+        const size =
+          info.size < 1024 * 1024
+            ? `${(info.size / 1024).toFixed(1)} KB`
+            : `${(info.size / (1024 * 1024)).toFixed(1)} MB`;
+        setFileSize(size);
+
+        const data = await readFile(resolved);
+        fileDataRef.current = data;
+
+        const detected =
+          typeFromExtension(resolved) ?? typeFromContent(new Uint8Array(data)) ?? "application/octet-stream";
+        setMimeType(detected);
+
+        if (detected.startsWith("image/")) {
+          const base64 = data.toString("base64");
+          setPreview(`data:${detected};base64,${base64}`);
+        } else if (!data.includes(0) && data.length > 0) {
+          // Text content — render in code fence to prevent markdown injection
+          const content = data.toString("utf-8");
+          const ext = resolved.split("/").pop()?.toLowerCase() || "";
+          setPreview(`\`\`\`${ext}\n${content}\n\`\`\``);
+        } else {
+          setPreview("");
+        }
+
+        if (prefs.uploadWithoutAsking) {
+          await doUpload(resolved, detected);
+        }
+      } finally {
+        if (cleanupDir) {
+          await rm(cleanupDir, { recursive: true, force: true });
+        }
       }
     }
-    loadPreview();
+    loadPreview().catch((err) => {
+      console.error("Failed to read clipboard file:", err);
+      setError("Could not read the clipboard file.");
+    });
   }, []);
 
   const doUpload = useCallback(
