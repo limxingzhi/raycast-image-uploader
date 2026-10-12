@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { createHistoryManager } from "./history";
+import { createHistoryManager, type StorageAdapter } from "./history";
 
-function createMockStorage() {
+function createMockStorage(): StorageAdapter & { _getRaw: (key: string) => string } {
   const store: Record<string, string> = {};
   return {
-    getItem: vi.fn((key: string) => store[key] ?? undefined),
-    setItem: vi.fn((key: string, value: string) => {
+    getItem: vi.fn(async (key: string) => store[key] ?? undefined),
+    setItem: vi.fn(async (key: string, value: string) => {
       store[key] = value;
     }),
     _getRaw: (key: string) => store[key],

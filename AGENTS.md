@@ -29,10 +29,14 @@ src/
     ├── s3.ts           # S3 client factory, key generation, URL builder
     ├── s3.test.ts      # Tests for s3 utilities
     ├── history.ts      # Upload history with storage adapter pattern
-    └── history.test.ts # Tests for history manager
+    ├── history.test.ts # Tests for history manager
+    ├── clipboard.ts    # Normalizes Clipboard.read().file to a filesystem path
+    ├── clipboard.test.ts # Tests for clipboard path resolution
+    ├── clipboard-image.ts # Extracts raw clipboard images via osascript (macOS)
+    └── clipboard-image.test.ts # Tests for clipboard image extraction
 ```
 
-**Data flow (upload):** Clipboard → `file://` URI → `url.fileURLToPath` → read file → `generateKey` (UUID + extension) → `uploadToS3Optimistic` builds URL synchronously, kicks off async upload via `performUpload` (with reused S3Client) → URL copied to clipboard immediately → upload awaited → history saved → success toast → `popToRoot`.
+**Data flow (upload):** Clipboard → `Clipboard.read().file` (a `file://` URL or a plain path, normalized by `clipboardFileToPath`) → read file → `generateKey` (UUID + extension) → `uploadToS3Optimistic` builds URL synchronously, kicks off async upload via `performUpload` (with reused S3Client) → URL copied to clipboard immediately → upload awaited → history saved → success toast → `popToRoot`. When `Clipboard.read()` returns no `file` (e.g. a screenshot, which is image data with no backing file), `extractClipboardImageToTempFile` writes the pasteboard image to a temp PNG via `osascript`, and that temp directory is removed in a `finally`.
 
 **Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`, extension derived from MIME type via `extensionFromMime` in `lib/mime.ts`.
 
@@ -54,7 +58,7 @@ src/
 - Test runner: vitest (config in `vitest.config.ts`, test files match `src/**/*.test.{ts,tsx}`)
 - MIME tests in `mime.test.ts` cover extension-to-MIME, MIME-to-extension, content-based (magic byte) detection, and edge cases (no extension, unknown types)
 - History tests use a hand-rolled mock storage (`createMockStorage`) with `_getRaw` accessor for direct assertion
-- No test covers the command files themselves (upload-image.tsx, recent-uploads.tsx) — only the lib/ modules: mime, s3, history
+- No test covers the command files themselves (upload-image.tsx, recent-uploads.tsx) — only the lib/ modules: mime, s3, history, clipboard, clipboard-image
 
 ## Conventions
 
@@ -67,7 +71,8 @@ src/
 
 ## Gotchas
 
-- `Clipboard.read()` returns a `file://` URI, not a path — `url.fileURLToPath` converts it. Don't use the URI directly with `fs.readFile`.
+- `Clipboard.read()` returns `file` as either a `file://` URL or a plain filesystem path, depending on how the content reached the clipboard. `url.fileURLToPath` throws `TypeError: Invalid URL` on a plain path, so always route through `clipboardFileToPath` in `lib/clipboard.ts`, which only converts actual file URLs.
+- `Clipboard.read()` does NOT expose raw image data. A screenshot (Cmd+Ctrl+Shift+4) leaves only image data on the pasteboard, so `Clipboard.read()` returns `{ text: "" }` with no `file`. Such images must be extracted natively, which `lib/clipboard-image.ts` does with `osascript` (JXA). This is macOS-only and returns `null` if the pasteboard has no image.
 - Textfield preferences like `recentImageCount` are strings — must `parseInt` before use. Checkbox preferences (e.g. `uploadWithoutAsking`) are booleans natively.
 - S3 object URL is constructed client-side as `{endpoint}/{bucket}/{key}` (path-style, default) or `{bucket}.{endpoint}/{key}` (virtual-hosted, `pathStyle: false`). There's no presigned URL or redirect. The bucket and objects must be publicly accessible for the URL to work.
 - The upload follows an optimistic pattern: URL is copied to clipboard immediately, but the history entry and success toast only appear after the S3 PUT completes. On failure, the clipboard is cleared and the in-memory file buffer is released.
