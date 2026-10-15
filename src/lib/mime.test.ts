@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { typeFromExtension, extensionFromMime, typeFromContent, isTextPreviewable } from "./mime";
+import {
+  typeFromExtension,
+  extensionFromMime,
+  extensionFromPath,
+  typeFromContent,
+  isTextPreviewable,
+} from "./mime";
 
 describe("typeFromExtension", () => {
   it("returns image/png for .png path", () => {
@@ -44,6 +50,28 @@ describe("typeFromExtension", () => {
 
   it("returns null for unknown extension", () => {
     expect(typeFromExtension("file.xyz")).toBeNull();
+  });
+});
+
+describe("extensionFromPath", () => {
+  it("returns the lowercase extension of a bare filename", () => {
+    expect(extensionFromPath("photo.PNG")).toBe("png");
+  });
+
+  it("returns the extension of a full path", () => {
+    expect(extensionFromPath("/Users/test/Downloads/report.pdf")).toBe("pdf");
+  });
+
+  it("returns an extension that has no MIME mapping", () => {
+    expect(extensionFromPath("artwork.psd")).toBe("psd");
+  });
+
+  it("returns null for a path with no extension", () => {
+    expect(extensionFromPath("Makefile")).toBeNull();
+  });
+
+  it("returns null for a path ending in a dot", () => {
+    expect(extensionFromPath("file.")).toBeNull();
   });
 });
 

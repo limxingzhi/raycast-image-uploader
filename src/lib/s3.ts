@@ -2,8 +2,17 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
 import { extensionFromMime } from "./mime";
 
-export function generateKey(mimeType: string): string {
-  const ext = extensionFromMime(mimeType);
+/**
+ * Builds a `{uuid}.{ext}` object key. `sourceExtension` (from the original file
+ * path) wins when it is a sane extension, so files whose type is not in the MIME
+ * table keep their real extension instead of becoming `.bin`.
+ */
+export function generateKey(
+  mimeType: string,
+  sourceExtension?: string | null,
+): string {
+  const sanitized = sourceExtension?.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const ext = sanitized ? sanitized : extensionFromMime(mimeType);
   const uuid = randomUUID();
   return `${uuid}.${ext}`;
 }

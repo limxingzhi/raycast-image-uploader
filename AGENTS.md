@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Raycast extension for uploading clipboard images to any S3-compatible endpoint (MinIO, etc.) and browsing upload history. Two commands: both view-based — an uploader with a confirmation/preview UI and a history browser.
+Raycast extension for uploading clipboard files (images, PDFs, documents, archives, text — anything the pasteboard carries) to any S3-compatible endpoint (MinIO, etc.) and browsing upload history. Two commands: both view-based — an uploader with a confirmation/preview UI and a history browser.
 
 ## Commands
 
@@ -32,13 +32,13 @@ src/
     ├── history.test.ts # Tests for history manager
     ├── clipboard.ts    # Normalizes Clipboard.read().file to a filesystem path
     ├── clipboard.test.ts # Tests for clipboard path resolution
-    ├── clipboard-image.ts # Extracts raw clipboard images via osascript (macOS)
-    └── clipboard-image.test.ts # Tests for clipboard image extraction
+    ├── clipboard-file.ts # Writes the clipboard payload (any type) to a temp file via osascript (macOS)
+    └── clipboard-file.test.ts # Tests for clipboard payload extraction
 ```
 
-**Data flow (upload):** Clipboard → `Clipboard.read().file` (a `file://` URL or a plain path, normalized by `clipboardFileToPath`) → read file → `generateKey` (UUID + extension) → `uploadToS3Optimistic` builds URL synchronously, kicks off async upload via `performUpload` (with reused S3Client) → URL copied to clipboard immediately → upload awaited → history saved → success toast → `popToRoot`. When `Clipboard.read()` returns no `file` (e.g. a screenshot, which is image data with no backing file), `extractClipboardImageToTempFile` writes the pasteboard image to a temp PNG via `osascript`, and that temp directory is removed in a `finally`.
+**Data flow (upload):** Clipboard → `Clipboard.read().file` (a `file://` URL or a plain path, normalized by `clipboardFileToPath`) → read file → `generateKey` (UUID + extension) → `uploadToS3Optimistic` builds URL synchronously, kicks off async upload via `performUpload` (with reused S3Client) → URL copied to clipboard immediately → upload awaited → history saved → success toast → `popToRoot`. When `Clipboard.read()` returns no `file` (a screenshot, or any file *content* copied from an app rather than a file reference), `extractClipboardFileToTempFile` writes the pasteboard payload to a temp file via `osascript`, keeping its original type, and that temp directory is removed in a `finally`.
 
-**Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`, extension derived from MIME type via `extensionFromMime` in `lib/mime.ts`.
+**Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`. The extension comes from the source path via `extensionFromPath` when it is usable, otherwise from the MIME type via `extensionFromMime` in `lib/mime.ts`. This keeps types missing from the MIME table (`.psd`, `.sketch`, ...) from collapsing to `.bin`.
 
 **History:** JSON array stored in Raycast `LocalStorage` under key `"upload-history"`. Capped at `recentImageCount` entries (default 50), newest first. JSON.parse errors are caught and return empty array. Out-of-bounds index in remove() is a no-op.
 
@@ -52,13 +52,14 @@ src/
 - **Streaming text preview fetch:** `fetchTextPreview()` in `recent-uploads.tsx` uses `ReadableStream.getReader()` to accumulate chunks and aborts once `MAX_PREVIEW_SIZE` (5 MB) is exceeded. This prevents OOM from servers that omit `content-length` or use chunked transfer encoding.
 - **Sanitized error messages:** Full errors are logged via `console.error` but user-facing toasts show a generic message ("Check your S3 configuration and try again.") to prevent leaking internal paths, AWS endpoint URLs, or access key IDs in screenshots.
 - **Markdown injection prevention:** All file content previews are wrapped in fenced code blocks (` ``` `) regardless of file extension, preventing untrusted file content from rendering as markdown links, images, or other syntax.
+- **Faithful clipboard payload selection:** `CLIPBOARD_FILE_SCRIPT` (in `clipboard-file.ts`) classifies every pasteboard type with `UTType` conformance (falling back to a static UTI→extension table on macOS < 11) and picks the most faithful payload: a real document (PDF, DOCX, ZIP, ...) beats a rendered image, which beats plain text, since copying from a web page puts the image *and* its URL as text on the pasteboard. Only `public.tiff` renderings are re-encoded to PNG, since raw TIFF is needlessly large.
 
 ## Testing
 
 - Test runner: vitest (config in `vitest.config.ts`, test files match `src/**/*.test.{ts,tsx}`)
 - MIME tests in `mime.test.ts` cover extension-to-MIME, MIME-to-extension, content-based (magic byte) detection, and edge cases (no extension, unknown types)
 - History tests use a hand-rolled mock storage (`createMockStorage`) with `_getRaw` accessor for direct assertion
-- No test covers the command files themselves (upload-image.tsx, recent-uploads.tsx) — only the lib/ modules: mime, s3, history, clipboard, clipboard-image
+- No test covers the command files themselves (upload-image.tsx, recent-uploads.tsx) — only the lib/ modules: mime, s3, history, clipboard, clipboard-file
 
 ## Conventions
 
@@ -72,7 +73,8 @@ src/
 ## Gotchas
 
 - `Clipboard.read()` returns `file` as either a `file://` URL or a plain filesystem path, depending on how the content reached the clipboard. `url.fileURLToPath` throws `TypeError: Invalid URL` on a plain path, so always route through `clipboardFileToPath` in `lib/clipboard.ts`, which only converts actual file URLs.
-- `Clipboard.read()` does NOT expose raw image data. A screenshot (Cmd+Ctrl+Shift+4) leaves only image data on the pasteboard, so `Clipboard.read()` returns `{ text: "" }` with no `file`. Such images must be extracted natively, which `lib/clipboard-image.ts` does with `osascript` (JXA). This is macOS-only and returns `null` if the pasteboard has no image.
+- `Clipboard.read()` returns `file` as either a `file://` URL or a plain filesystem path, depending on how the content reached the clipboard. `url.fileURLToPath` throws `TypeError: Invalid URL` on a plain path, so always route through `clipboardFileToPath` in `lib/clipboard.ts`, which only converts actual file URLs.
+- `Clipboard.read()` does NOT expose file *contents*; it only reports `text`, `html`, and a file reference. A screenshot (Cmd+Ctrl+Shift+4) and a PDF copied from Preview both arrive as pasteboard data with no `file`, so `Clipboard.read()` returns `{ text: "" }`. Such payloads are written out natively by `lib/clipboard-file.ts` via `osascript` (JXA). This is macOS-only and returns `null` if the pasteboard has no usable payload. Because the payload keeps its own type, a copied PDF lands in history as `{uuid}.pdf`, not as a rasterized PNG.
 - Textfield preferences like `recentImageCount` are strings — must `parseInt` before use. Checkbox preferences (e.g. `uploadWithoutAsking`) are booleans natively.
 - S3 object URL is constructed client-side as `{endpoint}/{bucket}/{key}` (path-style, default) or `{bucket}.{endpoint}/{key}` (virtual-hosted, `pathStyle: false`). There's no presigned URL or redirect. The bucket and objects must be publicly accessible for the URL to work.
 - The upload follows an optimistic pattern: URL is copied to clipboard immediately, but the history entry and success toast only appear after the S3 PUT completes. On failure, the clipboard is cleared and the in-memory file buffer is released.

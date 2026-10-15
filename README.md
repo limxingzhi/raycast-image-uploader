@@ -1,10 +1,10 @@
 # raycast-image-uploader
 
-A Raycast extension that uploads clipboard images to an S3-compatible endpoint and manages upload history.
+A Raycast extension that uploads clipboard files to an S3-compatible endpoint and manages upload history.
 
 ## Features
 
-- **Clipboard image upload** — reads images directly from your clipboard
+- **Clipboard upload** — uploads whatever is on your clipboard: images, PDFs, documents, spreadsheets, archives, or text
 - **Magic byte detection** — identifies file types by content when no extension is present (PNG, JPEG, GIF, WebP, HEIC, AVIF, TIFF, BMP, PDF, ZIP, GZIP, MP3, WAV, OGG, MP4)
 - **File preview** — renders image previews inline and text/code files with syntax highlighting via fenced code blocks
 - **Optimistic URL copy** — URL is copied to clipboard immediately before the upload completes
@@ -13,17 +13,17 @@ A Raycast extension that uploads clipboard images to an S3-compatible endpoint a
 
 ## Architecture
 
-Clipboard → `Clipboard.read().file` (a `file://` URL or a plain path, normalized by `clipboardFileToPath`) → read from disk → MIME detection (extension → magic bytes) → key generation (`{uuid}.{ext}`) → optimistic URL copy → S3 PUT → history save. When the clipboard holds a raw image with no backing file (e.g. a screenshot), the image is extracted to a temp PNG via `osascript` first.
+Clipboard → `Clipboard.read().file` (a `file://` URL or a plain path, normalized by `clipboardFileToPath`) → read from disk → MIME detection (extension → magic bytes) → key generation (`{uuid}.{ext}`) → optimistic URL copy → S3 PUT → history save. When the clipboard holds file *content* with no backing file (a screenshot, or a PDF copied from Preview), the payload is written to a temp file via `osascript`, preserving its original type.
 
 ```
 src/
-├── upload-image.tsx      # view command — confirm and upload clipboard image
+├── upload-image.tsx      # view command — confirm and upload clipboard file
 ├── recent-uploads.tsx    # view command — browse upload history
 └── lib/
     ├── mime.ts           # MIME detection (extension + magic bytes)
     ├── s3.ts             # S3 client, key generation, URL builder
     ├── clipboard.ts      # Normalizes clipboard file value to a path
-    ├── clipboard-image.ts # Extracts raw clipboard images via osascript (macOS)
+    ├── clipboard-file.ts  # Writes the clipboard payload (any type) via osascript (macOS)
     └── history.ts        # upload history (LocalStorage-backed)
 ```
 
@@ -36,8 +36,8 @@ src/
 
 ## Commands
 
-### Upload Image
-Copies an image from your clipboard, uploads it to your configured S3 bucket, and puts the URL into your clipboard. Supports any file type — images render inline, text/code files render with syntax-highlighted previews, and other files show metadata.
+### Upload File
+Copies a file from your clipboard, uploads it to your configured S3 bucket, and puts the URL into your clipboard. Supports any file type — images render inline, text/code files render with syntax-highlighted previews, and other files show metadata. The original file type is preserved (a copied PDF uploads as `.pdf`), including types that are not in the MIME table.
 
 If "Upload Without Asking" is disabled (default), you'll see a confirmation dialog before the upload starts.
 
@@ -61,7 +61,7 @@ Browse your upload history with inline previews. Images render as thumbnails, te
 | Access Key ID | S3 access key |
 | Secret Access Key | S3 secret key |
 | Upload Without Asking | Skip confirmation dialog (default: off) |
-| Recent Image Count | Number of uploads to keep in history (default: 50) |
+| History Size | Number of uploads to keep in history (default: 50) |
 
 ## Security
 

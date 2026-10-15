@@ -24,6 +24,26 @@ describe("generateKey", () => {
     const key = generateKey("application/vnd.unknown");
     expect(key).toMatch(/^[0-9a-f-]+\.bin$/);
   });
+
+  it("keeps the source extension for types missing from the MIME table", () => {
+    const key = generateKey("application/octet-stream", "psd");
+    expect(key).toMatch(/^[0-9a-f-]+\.psd$/);
+  });
+
+  it("prefers the source extension over the MIME-derived one", () => {
+    const key = generateKey("application/pdf", "pdf");
+    expect(key).toMatch(/^[0-9a-f-]+\.pdf$/);
+  });
+
+  it("sanitizes an unsafe source extension", () => {
+    const key = generateKey("application/octet-stream", "psd/../etc");
+    expect(key).toMatch(/^[0-9a-f-]+\.psdetc$/);
+  });
+
+  it("ignores an empty source extension", () => {
+    const key = generateKey("image/png", "");
+    expect(key).toMatch(/^[0-9a-f-]+\.png$/);
+  });
 });
 
 describe("extensionFromMime", () => {
@@ -81,7 +101,7 @@ describe("buildObjectUrl", () => {
 describe("uploadToS3Optimistic", () => {
   it("returns URL synchronously before upload completes", async () => {
     const mockSend = vi.fn().mockResolvedValue({});
-    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as any);
+    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
 
     const config: S3Config = {
       endpoint: "http://minio:9000",

@@ -133,12 +133,17 @@ const MAGIC: Array<{ mime: string; match: (h: Uint8Array) => boolean }> = [
   } },
 ];
 
-export function typeFromExtension(path: string): string | null {
+/** Lowercased file extension (without the dot) from a path, or null if there is none. */
+export function extensionFromPath(path: string): string | null {
   const last = path.replace(/^.*[/\\]/, "").toLowerCase();
   const dot = last.lastIndexOf(".");
   if (dot === -1 || dot === last.length - 1) return null;
-  const ext = last.slice(dot + 1);
-  return EXT_TO_MIME[ext] ?? null;
+  return last.slice(dot + 1);
+}
+
+export function typeFromExtension(path: string): string | null {
+  const ext = extensionFromPath(path);
+  return ext ? EXT_TO_MIME[ext] ?? null : null;
 }
 
 /** Detect MIME type from file content (magic bytes). Returns null if unknown. */

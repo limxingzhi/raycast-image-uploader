@@ -12,14 +12,14 @@ import {
 } from "@raycast/api";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { readFile, rm, stat } from "fs/promises";
-import { typeFromExtension, typeFromContent } from "./lib/mime";
+import { typeFromExtension, typeFromContent, extensionFromPath } from "./lib/mime";
 import { clipboardFileToPath } from "./lib/clipboard";
-import { extractClipboardImageToTempFile } from "./lib/clipboard-image";
+import { extractClipboardFileToTempFile } from "./lib/clipboard-file";
 import { generateKey, uploadToS3Optimistic, createS3Client } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
 
 export default function Command() {
-  const MAX_PREVIEW_SIZE = 50 * 1024 * 1024; // 50 MB — reject files larger than this
+  const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50 MB — reject files larger than this
   const [preview, setPreview] = useState<string>("");
   const [filePath, setFilePath] = useState<string>("");
   const [mimeType, setMimeType] = useState<string>("application/octet-stream");
@@ -62,9 +62,9 @@ export default function Command() {
       if (file) {
         resolved = clipboardFileToPath(file);
       } else {
-        const extracted = await extractClipboardImageToTempFile();
+        const extracted = await extractClipboardFileToTempFile();
         if (!extracted) {
-          setError("No image found in clipboard. Copy an image or take a screenshot first.");
+          setError("No file found in clipboard. Copy a file, image, or take a screenshot first.");
           return;
         }
         resolved = extracted.path;
@@ -75,8 +75,8 @@ export default function Command() {
         setFilePath(resolved);
 
         const info = await stat(resolved);
-        if (info.size > MAX_PREVIEW_SIZE) {
-          setError(`File too large (${(info.size / (1024 * 1024)).toFixed(0)} MB). Max preview size is ${MAX_PREVIEW_SIZE / (1024 * 1024)} MB.`);
+        if (info.size > MAX_UPLOAD_SIZE) {
+          setError(`File too large (${(info.size / (1024 * 1024)).toFixed(0)} MB). Max upload size is ${MAX_UPLOAD_SIZE / (1024 * 1024)} MB.`);
           return;
         }
         const size =
@@ -125,7 +125,7 @@ export default function Command() {
       uploadingRef.current = true;
       setIsUploading(true);
       try {
-        const key = generateKey(detected);
+        const key = generateKey(detected, extensionFromPath(path));
         const fileData = fileDataRef.current!;
 
         const { url, upload } = uploadToS3Optimistic(
@@ -187,7 +187,7 @@ export default function Command() {
 
   return (
     <Detail
-      navigationTitle="Upload Image"
+      navigationTitle="Upload File"
       isLoading={isUploading}
       markdown={markdown}
       metadata={
