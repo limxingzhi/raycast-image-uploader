@@ -54,7 +54,7 @@ async function performUpload(
   body: Buffer | Uint8Array,
   contentType: string,
   client?: S3Client,
-): Promise<string> {
+): Promise<void> {
   const s3 = client ?? createS3Client(config);
   await s3.send(
     new PutObjectCommand({
@@ -64,17 +64,16 @@ async function performUpload(
       ContentType: contentType,
     }),
   );
-  return buildObjectUrl(config.endpoint, config.bucket, key);
 }
 
-export function uploadToS3Optimistic(
+/** Uploads the object and resolves with its public URL only after the PUT succeeds. */
+export async function uploadToS3(
   config: S3Config,
   key: string,
   body: Buffer | Uint8Array,
   contentType: string,
   client?: S3Client,
-): { url: string; upload: Promise<string> } {
-  const url = buildObjectUrl(config.endpoint, config.bucket, key);
-  const upload = performUpload(config, key, body, contentType, client);
-  return { url, upload };
+): Promise<string> {
+  await performUpload(config, key, body, contentType, client);
+  return buildObjectUrl(config.endpoint, config.bucket, key);
 }

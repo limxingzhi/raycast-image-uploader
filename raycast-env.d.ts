@@ -8,7 +8,7 @@
 /* eslint-disable @typescript-eslint/ban-types */
 
 type ExtensionPreferences = {
-  /** S3 Endpoint - URL of your S3-compatible endpoint (e.g. http://100.x.x.x:9000) */
+  /** S3 Endpoint - URL of your S3-compatible endpoint (e.g. http://100.x.x.x:9000). Use HTTPS in production to protect credentials in transit. */
   "s3Endpoint": string,
   /** Bucket Name - S3 bucket name */
   "s3Bucket": string,
@@ -18,8 +18,8 @@ type ExtensionPreferences = {
   "s3SecretKey": string,
   /** Upload Without Asking - When enabled, uploads immediately without confirmation */
   "uploadWithoutAsking": boolean,
-  /** Recent Image Count - Number of recent uploads to keep in history */
-  "recentImageCount": string
+  /** Recent Uploads Count - Number of recent uploads to keep in history */
+  "recentImageCount": "5" | "10" | "25" | "50" | "100"
 }
 
 /** Preferences accessible in all the extension's commands */

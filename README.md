@@ -7,13 +7,22 @@ A Raycast extension that uploads clipboard files to an S3-compatible endpoint an
 - **Clipboard upload** — uploads whatever is on your clipboard: images, PDFs, documents, spreadsheets, archives, or text
 - **Magic byte detection** — identifies file types by content when no extension is present (PNG, JPEG, GIF, WebP, HEIC, AVIF, TIFF, BMP, PDF, ZIP, GZIP, MP3, WAV, OGG, MP4)
 - **File preview** — renders image previews inline and text/code files with syntax highlighting via fenced code blocks
-- **Optimistic URL copy** — URL is copied to clipboard immediately before the upload completes
+- **URL after success** — the object URL is copied only after the S3 upload completes, so the clipboard never holds a dead link
 - **S3-compatible** — works with MinIO, AWS S3, and any S3-compatible endpoint
 - **Upload history** — browse, search, and delete past uploads with inline previews
 
+## Behavior
+
+- **Clipboard-only input** — there is no file picker; the command uploads whatever the pasteboard currently carries.
+- **Any file type** — files, images, rich documents, and plain text are all uploaded. Plain text becomes a `.txt` object, including a copied link.
+- **50 MB cap** — larger files are rejected before upload with an in-app message.
+- **URL copy timing** — the URL is copied only after the PUT succeeds; a failed upload neither writes history nor clears or overwrites the clipboard.
+- **Stored history cap** — "Recent Uploads Count" caps stored entries and is enforced when the next upload is recorded, so lowering it takes effect on the next upload. The list renders everything stored.
+- **Copy action** — Recent Uploads copies the object URL, not the file, to the clipboard.
+
 ## Architecture
 
-Clipboard → `Clipboard.read().file` (a `file://` URL or a plain path, normalized by `clipboardFileToPath`) → read from disk → MIME detection (extension → magic bytes) → key generation (`{uuid}.{ext}`) → optimistic URL copy → S3 PUT → history save. When the clipboard holds file *content* with no backing file (a screenshot, or a PDF copied from Preview), the payload is written to a temp file via `osascript`, preserving its original type.
+Clipboard → `Clipboard.read().file` (a `file://` URL or a plain path, normalized by `clipboardFileToPath`) → read from disk → MIME detection (extension → magic bytes) → key generation (`{uuid}.{ext}`) → S3 PUT → URL copied to clipboard → history save. When the clipboard holds file *content* with no backing file (a screenshot, or a PDF copied from Preview), the payload is written to a temp file via `osascript`, preserving its original type.
 
 ```
 src/
@@ -29,7 +38,7 @@ src/
 
 ### Key patterns
 
-- **Optimistic upload**: URL is constructed and copied to clipboard before the S3 PUT request completes. History entry and success toast appear after the upload finishes.
+- **Copy after upload**: the object URL is computed after a successful PUT and only then copied to the clipboard. A failed upload leaves the previous clipboard contents intact and does not write a history entry.
 - **S3Client reuse**: The S3 client is created once per command and reused across uploads via a ref, avoiding TLS handshake overhead.
 - **Storage adapter pattern**: History uses an injectable `StorageAdapter` interface, making it testable without Raycast's `LocalStorage`.
 - **Path-style URLs**: `forcePathStyle: true` is the default, required for self-hosted S3-compatible backends like MinIO.
@@ -37,12 +46,16 @@ src/
 ## Commands
 
 ### Upload File
-Copies a file from your clipboard, uploads it to your configured S3 bucket, and puts the URL into your clipboard. Supports any file type — images render inline, text/code files render with syntax-highlighted previews, and other files show metadata. The original file type is preserved (a copied PDF uploads as `.pdf`), including types that are not in the MIME table.
+Copies a file from your clipboard, uploads it to your configured S3 bucket, and, once the upload succeeds, puts the URL into your clipboard. Supports any file type — images render inline, text/code files render with syntax-highlighted previews, and other files show metadata. The original file type is preserved (a copied PDF uploads as `.pdf`), including types that are not in the MIME table.
+
+If the upload fails, the clipboard is left untouched, no history entry is written, and a failure toast is shown.
 
 If "Upload Without Asking" is disabled (default), you'll see a confirmation dialog before the upload starts.
 
 ### Recent Uploads
-Browse your upload history with inline previews. Images render as thumbnails, text/code files show syntax-highlighted content, and other files show metadata. Copy URLs, open in browser, or delete entries from history using keyboard shortcuts (⌘Y, ⌘O, ⌘D).
+Browse your upload history with inline previews. Every uploaded file type is listed, not just images. Images render as thumbnails, text/code files show syntax-highlighted content, and other files show metadata. Copy URLs, open in browser, or delete entries from history using keyboard shortcuts (⌘Y, ⌘O, ⌘D).
+
+How many uploads are kept is controlled by the "Recent Uploads Count" preference. The cap is applied when a new upload is recorded, so lowering it takes effect on the next upload rather than immediately shrinking the existing list.
 
 ### Screenshots
 
@@ -61,7 +74,7 @@ Browse your upload history with inline previews. Images render as thumbnails, te
 | Access Key ID | S3 access key |
 | Secret Access Key | S3 secret key |
 | Upload Without Asking | Skip confirmation dialog (default: off) |
-| History Size | Number of uploads to keep in history (default: 50) |
+| Recent Uploads Count | Number of uploads to keep in history: 5, 10, 25, 50, or 100 (default: 50) |
 
 ## Security
 

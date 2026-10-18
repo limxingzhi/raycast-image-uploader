@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import type { S3Config } from "./s3";
 import { extensionFromMime } from "./mime";
-import { generateKey, buildObjectUrl, uploadToS3Optimistic } from "./s3";
+import { generateKey, buildObjectUrl, uploadToS3 } from "./s3";
 import { S3Client } from "@aws-sdk/client-s3";
 
 vi.mock("@aws-sdk/client-s3", () => ({
@@ -98,9 +98,15 @@ describe("buildObjectUrl", () => {
   });
 });
 
-describe("uploadToS3Optimistic", () => {
-  it("returns URL synchronously before upload completes", async () => {
-    const mockSend = vi.fn().mockResolvedValue({});
+describe("uploadToS3", () => {
+  it("returns the URL only after the upload completes", async () => {
+    let resolveSend: (value: unknown) => void = () => {};
+    const mockSend = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
     vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
 
     const config: S3Config = {
@@ -112,13 +118,33 @@ describe("uploadToS3Optimistic", () => {
     const key = "2025/01/01/uuid.png";
     const body = Buffer.from("fake-image-data");
 
-    const result = uploadToS3Optimistic(config, key, body, "image/png");
+    let settled = false;
+    const result = uploadToS3(config, key, body, "image/png");
+    result.finally(() => {
+      settled = true;
+    });
 
-    // URL is available synchronously — no await needed
-    expect(result.url).toBe("http://minio:9000/images/2025/01/01/uuid.png");
-    expect(result.upload).toBeInstanceOf(Promise);
+    await Promise.resolve();
+    expect(settled).toBe(false);
 
-    await result.upload;
+    resolveSend({});
+    await expect(result).resolves.toBe("http://minio:9000/images/2025/01/01/uuid.png");
+  });
+
+  it("rejects instead of returning a URL when the upload fails", async () => {
+    const mockSend = vi.fn().mockRejectedValue(new Error("access denied"));
+    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+
+    const config: S3Config = {
+      endpoint: "http://minio:9000",
+      bucket: "images",
+      accessKeyId: "key",
+      secretAccessKey: "secret",
+    };
+
+    await expect(uploadToS3(config, "key.png", Buffer.from("data"), "image/png")).rejects.toThrow(
+      "access denied",
+    );
   });
 
   it("accepts a pre-created S3Client for reuse", async () => {
@@ -132,10 +158,10 @@ describe("uploadToS3Optimistic", () => {
       accessKeyId: "key",
       secretAccessKey: "secret",
     };
-    const result = uploadToS3Optimistic(config, "key.png", Buffer.from("data"), "image/png", client);
 
-    expect(result.url).toBe("http://minio:9000/images/key.png");
-    await result.upload;
+    await expect(
+      uploadToS3(config, "key.png", Buffer.from("data"), "image/png", client),
+    ).resolves.toBe("http://minio:9000/images/key.png");
     expect(mockSend).toHaveBeenCalledOnce();
   });
 });

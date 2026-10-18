@@ -15,7 +15,7 @@ import { readFile, rm, stat } from "fs/promises";
 import { typeFromExtension, typeFromContent, extensionFromPath } from "./lib/mime";
 import { clipboardFileToPath } from "./lib/clipboard";
 import { extractClipboardFileToTempFile } from "./lib/clipboard-file";
-import { generateKey, uploadToS3Optimistic, createS3Client } from "./lib/s3";
+import { generateKey, uploadToS3, createS3Client } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
 
 export default function Command() {
@@ -128,7 +128,7 @@ export default function Command() {
         const key = generateKey(detected, extensionFromPath(path));
         const fileData = fileDataRef.current!;
 
-        const { url, upload } = uploadToS3Optimistic(
+        const url = await uploadToS3(
           {
             endpoint: prefs.s3Endpoint,
             bucket: prefs.s3Bucket,
@@ -141,13 +141,10 @@ export default function Command() {
           s3ClientRef.current,
         );
 
-        // Copy URL optimistically — user can try it immediately
-        await Clipboard.copy({ text: url });
-
-        // Wait for the actual upload to finish before recording history
-        await upload;
         fileDataRef.current = null;
 
+        // Only publish the URL once the object exists in S3.
+        await Clipboard.copy({ text: url });
         await historyRef.current.add(url, key);
         await showToast({
           style: Toast.Style.Success,
@@ -158,7 +155,6 @@ export default function Command() {
       } catch (err) {
         console.error("Upload failed:", err);
         fileDataRef.current = null;
-        await Clipboard.copy({ text: "" });
         await showToast({
           style: Toast.Style.Failure,
           title: "Upload failed",

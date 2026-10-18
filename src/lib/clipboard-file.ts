@@ -16,14 +16,21 @@ const execFileAsync = promisify(execFile);
  * identifier, which keeps the original file type (PDF stays a PDF) instead of
  * coercing everything through a rasterized PNG.
  *
+ * Three stages, each isolated so a failure in one still leaves the others
+ * usable: a file already on the pasteboard, then rich payloads, then (last
+ * resort) anything AppKit can render.
+ *
  * Prints the path of the written file on success and throws otherwise.
  */
 export const CLIPBOARD_FILE_SCRIPT = `
 ObjC.import("AppKit");
+// UniformTypeIdentifiers ships with macOS 11+, and Raycast itself requires
+// macOS 11+, so this is always resolvable in practice. The table below only
+// exists in case the bridge misbehaves.
 try {
   ObjC.import("UniformTypeIdentifiers");
 } catch (error) {
-  // macOS < 11: fall back to the static extension table below.
+  // Fall back to the static extension table.
 }
 
 function unwrap(value) {
@@ -144,23 +151,36 @@ function isImageType(identifier) {
   return conformsTo(identifier, "public.image");
 }
 
-function firstFileUrl(pasteboard) {
-  var urls = pasteboard.readObjectsForClassesOptions($([$.NSURL.class()]), $());
-  if (!urls) return null;
-  for (var i = 0; i < urls.count; i++) {
-    var url = urls.objectAtIndex(i);
-    if (unwrap(url.isFileURL)) {
-      var path = unwrap(url.path);
-      if (path) return path;
-    }
+function writeData(data, outputPath) {
+  try {
+    if (!data) return false;
+    return !!data.writeToFileAtomically($(outputPath), true);
+  } catch (error) {
+    return false;
   }
-  return null;
 }
 
-function firstLegacyFilename(pasteboard) {
-  var names = pasteboard.propertyListForType("NSFilenamesPboardType");
-  if (!names || names.count === 0) return null;
-  return unwrap(names.objectAtIndex(0));
+// Uncompressed TIFF renderings are needlessly large, and a TIFF payload must
+// never be written under a .png name, so re-encode it properly.
+function convertToPng(data) {
+  try {
+    if (!data) return null;
+    var rep = $.NSBitmapImageRep.imageRepWithData(data);
+    if (!rep) return null;
+    var format = $.NSBitmapImageFileTypePNG === undefined ? $.NSPNGFileType : $.NSBitmapImageFileTypePNG;
+    return rep.representationUsingTypeProperties(format, $());
+  } catch (error) {
+    return null;
+  }
+}
+
+function writePng(data, outputPath, convert) {
+  try {
+    var png = convert ? convertToPng(data) : data;
+    return writeData(png, outputPath) ? outputPath : null;
+  } catch (error) {
+    return null;
+  }
 }
 
 // A real document (PDF, DOCX, ZIP, ...) beats a rendered image, which beats
@@ -176,65 +196,110 @@ function chooseCandidate(documents, images, texts) {
   return texts.length > 0 ? texts[0] : null;
 }
 
-// Uncompressed TIFF renderings are needlessly large; re-encode just those.
-function writePng(data, outputPath) {
+function pickPayload(pasteboard) {
+  var documents = [];
+  var images = [];
+  var texts = [];
+  var types = pasteboard.types;
+  if (!types) return null;
+
+  for (var i = 0; i < types.count; i++) {
+    var identifier = unwrap(types.objectAtIndex(i));
+    if (!identifier || isTransient(identifier)) continue;
+    if (conformsTo(identifier, "public.file-url")) continue;
+    if (conformsTo(identifier, "public.url")) continue;
+    var extension = extensionFor(identifier);
+    if (!extension) continue;
+    var data = pasteboard.dataForType($(identifier));
+    if (!data || data.length === 0) continue;
+    var candidate = { identifier: identifier, extension: extension, data: data };
+    if (isImageType(identifier)) {
+      images.push(candidate);
+    } else if (isTextType(identifier)) {
+      texts.push(candidate);
+    } else {
+      documents.push(candidate);
+    }
+  }
+
+  return chooseCandidate(documents, images, texts);
+}
+
+// A file is already on the pasteboard: a Finder copy, a drag, or a promised
+// file that AppKit has just materialised for us.
+function tryExistingFile(pasteboard) {
   try {
-    var rep = $.NSBitmapImageRep.imageRepWithData(data);
-    if (!rep) return false;
-    var format = $.NSBitmapImageFileTypePNG === undefined ? $.NSPNGFileType : $.NSBitmapImageFileTypePNG;
-    var png = rep.representationUsingTypeProperties(format, $());
-    if (!png) return false;
-    return png.writeToFileAtomically($(outputPath), true);
+    var urls = pasteboard.readObjectsForClassesOptions($([$.NSURL.class()]), $());
+    if (urls) {
+      for (var i = 0; i < urls.count; i++) {
+        var url = urls.objectAtIndex(i);
+        if (unwrap(url.isFileURL)) {
+          var path = unwrap(url.path);
+          if (path) return path;
+        }
+      }
+    }
+    var names = pasteboard.propertyListForType("NSFilenamesPboardType");
+    if (names && names.count > 0) {
+      var legacy = unwrap(names.objectAtIndex(0));
+      if (legacy) return legacy;
+    }
+    return null;
   } catch (error) {
-    return false;
+    return null;
+  }
+}
+
+function tryPayload(pasteboard, outputDir) {
+  var chosen;
+  try {
+    chosen = pickPayload(pasteboard);
+  } catch (error) {
+    return null;
+  }
+  if (!chosen) return null;
+
+  if (chosen.identifier === "public.tiff") {
+    var asPng = writePng(chosen.data, outputDir + "/clipboard.png", true);
+    if (asPng) return asPng;
+  }
+
+  var outputPath = outputDir + "/clipboard." + chosen.extension;
+  if (!writeData(chosen.data, outputPath)) {
+    throw new Error("Could not write clipboard data to disk.");
+  }
+  return outputPath;
+}
+
+// Last resort: let AppKit render image data we could not identify, so a
+// screenshot or bitmap copy always has something to upload.
+function tryRasterize(pasteboard, outputDir) {
+  try {
+    var images = pasteboard.readObjectsForClassesOptions($([$.NSImage.class()]), $());
+    if (!images || images.count === 0) return null;
+    var image = images.objectAtIndex(0);
+    if (!image) return null;
+    return writePng(image.TIFFRepresentation, outputDir + "/clipboard.png", true);
+  } catch (error) {
+    return null;
   }
 }
 
 function run(argv) {
   var outputDir = argv[0];
   var pasteboard = $.NSPasteboard.generalPasteboard;
+  var written;
 
-  var existing = firstFileUrl(pasteboard) || firstLegacyFilename(pasteboard);
-  if (existing) return existing;
+  written = tryExistingFile(pasteboard);
+  if (written) return written;
 
-  var types = pasteboard.types;
-  var documents = [];
-  var images = [];
-  var texts = [];
+  written = tryPayload(pasteboard, outputDir);
+  if (written) return written;
 
-  if (types) {
-    for (var i = 0; i < types.count; i++) {
-      var identifier = unwrap(types.objectAtIndex(i));
-      if (!identifier || isTransient(identifier)) continue;
-      if (conformsTo(identifier, "public.file-url")) continue;
-      if (conformsTo(identifier, "public.url")) continue;
-      var extension = extensionFor(identifier);
-      if (!extension) continue;
-      var data = pasteboard.dataForType($(identifier));
-      if (!data || data.length === 0) continue;
-      var candidate = { identifier: identifier, extension: extension, data: data };
-      if (isImageType(identifier)) {
-        images.push(candidate);
-      } else if (isTextType(identifier)) {
-        texts.push(candidate);
-      } else {
-        documents.push(candidate);
-      }
-    }
-  }
+  written = tryRasterize(pasteboard, outputDir);
+  if (written) return written;
 
-  var chosen = chooseCandidate(documents, images, texts);
-  if (!chosen) throw new Error("Clipboard does not contain a file.");
-
-  if (chosen.identifier === "public.tiff" && writePng(chosen.data, outputDir + "/clipboard.png")) {
-    return outputDir + "/clipboard.png";
-  }
-
-  var outputPath = outputDir + "/clipboard." + chosen.extension;
-  if (!chosen.data.writeToFileAtomically($(outputPath), true)) {
-    throw new Error("Could not write clipboard data to disk.");
-  }
-  return outputPath;
+  throw new Error("Clipboard does not contain a file.");
 }
 `;
 
