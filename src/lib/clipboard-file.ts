@@ -33,6 +33,7 @@ try {
   // Fall back to the static extension table.
 }
 
+// ObjC bridge values arrive wrapped; bridge failures are treated as absent.
 function unwrap(value) {
   if (value === undefined || value === null) return null;
   try {
@@ -93,6 +94,7 @@ var IMAGE_PREFERENCE = [
   "com.microsoft.bmp"
 ];
 
+// Plain-text UTIs; ranked below documents and images by chooseCandidate.
 var TEXT_IDENTIFIERS = [
   "public.utf8-plain-text",
   "public.plain-text",
@@ -100,9 +102,11 @@ var TEXT_IDENTIFIERS = [
   "com.apple.traditional-mac-plain-text"
 ];
 
+// Drag, promise, and webarchive types that must never become uploads.
 var TRANSIENT_PREFIXES = ["dyn.", "com.apple.pasteboard.", "com.apple.webarchive"];
 
 function utTypeFor(identifier) {
+  // UTType is the modern API; if the bridge is missing, fall back to the static table.
   if (!$ || !$.UTType || typeof $.UTType.typeWithIdentifier !== "function") return null;
   try {
     return $.UTType.typeWithIdentifier($(identifier));
@@ -112,6 +116,7 @@ function utTypeFor(identifier) {
 }
 
 function conformsTo(identifier, supertype) {
+  // Asks UTType whether one pasteboard type is a kind of another (e.g. public.image).
   var type = utTypeFor(identifier);
   var parent = utTypeFor(supertype);
   if (!type || !parent) return false;
@@ -123,6 +128,7 @@ function conformsTo(identifier, supertype) {
 }
 
 function extensionFor(identifier) {
+  // Pinned extension first, then the UTI's preferred extension, otherwise skip.
   var known = FALLBACK_EXTENSIONS[identifier];
   if (known) return known;
   var type = utTypeFor(identifier);
@@ -152,6 +158,7 @@ function isImageType(identifier) {
 }
 
 function writeData(data, outputPath) {
+  // Atomic write prevents a partially written file from being uploaded.
   try {
     if (!data) return false;
     return !!data.writeToFileAtomically($(outputPath), true);
@@ -175,6 +182,7 @@ function convertToPng(data) {
 }
 
 function writePng(data, outputPath, convert) {
+  // Return null instead of throwing so the caller can try another stage.
   try {
     var png = convert ? convertToPng(data) : data;
     return writeData(png, outputPath) ? outputPath : null;
@@ -205,6 +213,7 @@ function pickPayload(pasteboard) {
 
   for (var i = 0; i < types.count; i++) {
     var identifier = unwrap(types.objectAtIndex(i));
+    // File references and plain URLs are resolved by the other two stages.
     if (!identifier || isTransient(identifier)) continue;
     if (conformsTo(identifier, "public.file-url")) continue;
     if (conformsTo(identifier, "public.url")) continue;
@@ -260,13 +269,15 @@ function tryPayload(pasteboard, outputDir) {
   if (!chosen) return null;
 
   if (chosen.identifier === "public.tiff") {
+    // Raw TIFF is needlessly large, so re-encode it before writing.
     var asPng = writePng(chosen.data, outputDir + "/clipboard.png", true);
     if (asPng) return asPng;
   }
 
   var outputPath = outputDir + "/clipboard." + chosen.extension;
   if (!writeData(chosen.data, outputPath)) {
-    throw new Error("Could not write clipboard data to disk.");
+    // Return null so the rasterize fallback still gets a chance.
+    return null;
   }
   return outputPath;
 }
@@ -290,6 +301,7 @@ function run(argv) {
   var pasteboard = $.NSPasteboard.generalPasteboard;
   var written;
 
+  // Try each stage in order; the final throw only fires when all three fail.
   written = tryExistingFile(pasteboard);
   if (written) return written;
 
@@ -314,6 +326,7 @@ export async function defaultOsascriptRunner(outputDir: string): Promise<string>
   const { stdout } = await execFileAsync(
     "/usr/bin/osascript",
     ["-l", "JavaScript", "-e", CLIPBOARD_FILE_SCRIPT, outputDir],
+    // 5 s timeout keeps a hung pasteboard from freezing the command.
     { timeout: 5000 },
   );
   return stdout.trim();
@@ -323,6 +336,7 @@ export async function extractClipboardFileToTempFile(
   options: { runOsascript?: OsascriptRunner; platform?: NodeJS.Platform } = {},
 ): Promise<ExtractedClipboardFile | null> {
   const platform = options.platform ?? process.platform;
+  // Pasteboard access via osascript only exists on macOS.
   if (platform !== "darwin") return null;
 
   const runOsascript = options.runOsascript ?? defaultOsascriptRunner;
@@ -334,6 +348,7 @@ export async function extractClipboardFileToTempFile(
     return { path, cleanupDir };
   } catch (err) {
     console.error("Failed to extract clipboard contents:", err);
+    // Clean up partial output so failed extractions do not leave temp files behind.
     await rm(cleanupDir, { recursive: true, force: true });
     return null;
   }

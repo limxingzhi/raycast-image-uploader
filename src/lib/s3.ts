@@ -12,6 +12,7 @@ export function generateKey(
   sourceExtension?: string | null,
 ): string {
   const sanitized = sourceExtension?.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  // Keep the key URL-safe; fall back to the MIME table when the source has no usable extension.
   const ext = sanitized ? sanitized : extensionFromMime(mimeType);
   const uuid = randomUUID();
   return `${uuid}.${ext}`;
@@ -23,10 +24,10 @@ export function buildObjectUrl(
   key: string,
   pathStyle = true,
 ): string {
-  const base = endpoint.replace(/\/+$/, "");
+  const base = endpoint.replace(/\/+$/, ""); // Avoid a double slash in the final URL.
   return pathStyle
-    ? `${base}/${bucket}/${key}`
-    : `${base.replace("://", `://${bucket}.`)}/${key}`;
+    ? `${base}/${bucket}/${key}` // Path style: endpoint/bucket/key.
+    : `${base.replace("://", `://${bucket}.`)}/${key}`; // Virtual-hosted: bucket.endpoint/key.
 }
 
 export interface S3Config {
@@ -39,11 +40,12 @@ export interface S3Config {
 export function createS3Client(config: S3Config): S3Client {
   return new S3Client({
     endpoint: config.endpoint,
-    region: "us-east-1",
+    region: "us-east-1", // Most S3-compatible backends ignore the region.
     credentials: {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,
     },
+    // Required by self-hosted endpoints that cannot serve virtual-hosted buckets.
     forcePathStyle: true,
   });
 }
@@ -55,6 +57,7 @@ async function performUpload(
   contentType: string,
   client?: S3Client,
 ): Promise<void> {
+  // An injected client lets the command reuse one connection pool across uploads.
   const s3 = client ?? createS3Client(config);
   await s3.send(
     new PutObjectCommand({

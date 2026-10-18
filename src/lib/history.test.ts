@@ -60,6 +60,38 @@ describe("getHistory", () => {
     const mgr = createHistoryManager(storage, 50);
     expect(await mgr.getAll()).toEqual([]);
   });
+
+  it("drops null entries", async () => {
+    const storage = createMockStorage();
+    await storage.setItem("upload-history", "[null]");
+    const mgr = createHistoryManager(storage, 50);
+    expect(await mgr.getAll()).toEqual([]);
+  });
+
+  it("drops entries missing required fields", async () => {
+    const storage = createMockStorage();
+    await storage.setItem("upload-history", "[{}]");
+    const mgr = createHistoryManager(storage, 50);
+    expect(await mgr.getAll()).toEqual([]);
+  });
+
+  it("drops entries with wrong field types", async () => {
+    const storage = createMockStorage();
+    await storage.setItem(
+      "upload-history",
+      '[{"url":1,"filename":true,"timestamp":"yesterday"}]',
+    );
+    const mgr = createHistoryManager(storage, 50);
+    expect(await mgr.getAll()).toEqual([]);
+  });
+
+  it("keeps well-formed entries alongside malformed ones", async () => {
+    const storage = createMockStorage();
+    const valid = { url: "https://example.com/a.png", filename: "a.png", timestamp: 1000 };
+    await storage.setItem("upload-history", JSON.stringify([null, valid, {}]));
+    const mgr = createHistoryManager(storage, 50);
+    expect(await mgr.getAll()).toEqual([valid]);
+  });
 });
 
 describe("addEntry", () => {
@@ -130,6 +162,16 @@ describe("addEntry", () => {
   it("starts a fresh history when the stored JSON is corrupt", async () => {
     const storage = createMockStorage();
     await storage.setItem("upload-history", "{not json");
+    const mgr = createHistoryManager(storage, 50);
+    await mgr.add("http://example.com/a.png", "a.png");
+    const result = await mgr.getAll();
+    expect(result).toHaveLength(1);
+    expect(result[0].url).toBe("http://example.com/a.png");
+  });
+
+  it("adds onto a history containing malformed entries", async () => {
+    const storage = createMockStorage();
+    await storage.setItem("upload-history", "[null,{}]");
     const mgr = createHistoryManager(storage, 50);
     await mgr.add("http://example.com/a.png", "a.png");
     const result = await mgr.getAll();

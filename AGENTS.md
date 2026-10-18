@@ -45,7 +45,7 @@ src/
 
 **Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`. The extension comes from the source path via `extensionFromPath` when it is usable, otherwise from the MIME type via `extensionFromMime` in `lib/mime.ts`. This keeps types missing from the MIME table (`.psd`, `.sketch`, ...) from collapsing to `.bin`.
 
-**History:** JSON array stored in Raycast `LocalStorage` under key `"upload-history"`. Capped at the "Recent Uploads Count" preference (5/10/25/50/100, default 50), enforced when an entry is added, newest first. The list renders every stored entry, so lowering the preference does not shrink existing history until the next upload. JSON.parse errors and non-array payloads return an empty array. Out-of-bounds index in remove() is a no-op.
+**History:** JSON array stored in Raycast `LocalStorage` under key `"upload-history"`. Capped at the "Recent Uploads Count" preference (5/10/25/50/100, default 50), enforced when an entry is added, newest first. The list renders every stored entry, so lowering the preference does not shrink existing history until the next upload. JSON.parse errors and non-array payloads return an empty array. Entries that are not objects with a string `url`/`filename` and a numeric `timestamp` are filtered out on read, so corrupt rows never reach the commands. Out-of-bounds index in remove() is a no-op.
 
 ## Key Patterns
 
