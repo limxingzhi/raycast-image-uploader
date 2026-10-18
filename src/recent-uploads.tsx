@@ -13,36 +13,11 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
 import { typeFromExtension, isTextPreviewable } from "./lib/mime";
+import { fetchTextPreview } from "./lib/text-preview";
+import { resolveRecentCount } from "./lib/recent-count";
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
-}
-
-const MAX_PREVIEW_SIZE = 5 * 1024 * 1024; // 5 MB — skip text previews for larger files
-
-/** Fetch a text preview, capping the response body at MAX_PREVIEW_SIZE bytes. */
-async function fetchTextPreview(
-  entry: HistoryEntry,
-  signal: AbortSignal,
-): Promise<string | null> {
-  const r = await fetch(entry.url, { signal });
-  if (!r.ok || !r.body) return null;
-  const reader = r.body.getReader();
-  const decoder = new TextDecoder();
-  let result = "";
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > MAX_PREVIEW_SIZE) return null; // too large, abort
-      result += decoder.decode(value, { stream: true });
-    }
-  } finally {
-    reader.cancel().catch(() => {});
-  }
-  return result;
 }
 
 export default function RecentUploads() {
@@ -50,7 +25,7 @@ export default function RecentUploads() {
   const [isLoading, setIsLoading] = useState(true);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const prefs = getPreferenceValues<Preferences.RecentUploads>();
-  const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
+  const recentCount = resolveRecentCount(prefs.recentImageCount);
   const historyRef = useRef(createHistoryManager(
     {
       getItem: (k) => LocalStorage.getItem<string>(k),

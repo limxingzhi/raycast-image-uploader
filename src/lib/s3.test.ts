@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import type { S3Config } from "./s3";
 import { extensionFromMime } from "./mime";
-import { generateKey, buildObjectUrl, uploadToS3 } from "./s3";
-import { S3Client } from "@aws-sdk/client-s3";
+import { generateKey, buildObjectUrl, uploadToS3, createS3Client } from "./s3";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 vi.mock("@aws-sdk/client-s3", () => ({
   S3Client: vi.fn(),
@@ -42,6 +42,15 @@ describe("generateKey", () => {
 
   it("ignores an empty source extension", () => {
     const key = generateKey("image/png", "");
+    expect(key).toMatch(/^[0-9a-f-]+\.png$/);
+  });
+
+  it("generates a different key for every call", () => {
+    expect(generateKey("image/png")).not.toBe(generateKey("image/png"));
+  });
+
+  it("lowercases the source extension", () => {
+    const key = generateKey("image/png", "PNG");
     expect(key).toMatch(/^[0-9a-f-]+\.png$/);
   });
 });
@@ -95,6 +104,21 @@ describe("buildObjectUrl", () => {
       false,
     );
     expect(url).toBe("https://my-bucket.s3.amazonaws.com/abc.png");
+  });
+
+  it("strips multiple trailing slashes from the endpoint", () => {
+    const url = buildObjectUrl("http://100.x.x.x:9000///", "my-bucket", "abc.png");
+    expect(url).toBe("http://100.x.x.x:9000/my-bucket/abc.png");
+  });
+
+  it("preserves a path prefix on the endpoint", () => {
+    const url = buildObjectUrl("https://example.com/storage/", "my-bucket", "abc.png");
+    expect(url).toBe("https://example.com/storage/my-bucket/abc.png");
+  });
+
+  it("keeps the port in a virtual-hosted-style URL", () => {
+    const url = buildObjectUrl("http://localhost:9000", "my-bucket", "abc.png", false);
+    expect(url).toBe("http://my-bucket.localhost:9000/abc.png");
   });
 });
 
@@ -163,5 +187,87 @@ describe("uploadToS3", () => {
       uploadToS3(config, "key.png", Buffer.from("data"), "image/png", client),
     ).resolves.toBe("http://minio:9000/images/key.png");
     expect(mockSend).toHaveBeenCalledOnce();
+  });
+
+  it("sends bucket, key, body, and content type with the PUT", async () => {
+    const mockSend = vi.fn().mockResolvedValue({});
+    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+    vi.mocked(PutObjectCommand).mockClear();
+
+    const config: S3Config = {
+      endpoint: "http://minio:9000",
+      bucket: "images",
+      accessKeyId: "key",
+      secretAccessKey: "secret",
+    };
+    const body = Buffer.from("document-data");
+
+    await uploadToS3(config, "key.pdf", body, "application/pdf");
+
+    expect(PutObjectCommand).toHaveBeenCalledWith({
+      Bucket: "images",
+      Key: "key.pdf",
+      Body: body,
+      ContentType: "application/pdf",
+    });
+  });
+
+  it("creates a client when none is provided", async () => {
+    const mockSend = vi.fn().mockResolvedValue({});
+    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+    vi.mocked(S3Client).mockClear();
+
+    const config: S3Config = {
+      endpoint: "http://minio:9000",
+      bucket: "images",
+      accessKeyId: "key",
+      secretAccessKey: "secret",
+    };
+
+    await uploadToS3(config, "key.png", Buffer.from("data"), "image/png");
+
+    expect(S3Client).toHaveBeenCalledOnce();
+  });
+
+  it("does not create a client when one is provided", async () => {
+    const client = new S3Client({});
+    client.send = vi.fn().mockResolvedValue({});
+    vi.mocked(S3Client).mockClear();
+
+    const config: S3Config = {
+      endpoint: "http://minio:9000",
+      bucket: "images",
+      accessKeyId: "key",
+      secretAccessKey: "secret",
+    };
+
+    await uploadToS3(config, "key.png", Buffer.from("data"), "image/png", client);
+
+    expect(S3Client).not.toHaveBeenCalled();
+  });
+});
+
+describe("createS3Client", () => {
+  it("configures path-style access and static credentials", () => {
+    const mockSend = vi.fn().mockResolvedValue({});
+    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+    vi.mocked(S3Client).mockClear();
+
+    createS3Client({
+      endpoint: "http://minio:9000",
+      bucket: "images",
+      accessKeyId: "key",
+      secretAccessKey: "secret",
+    });
+
+    expect(S3Client).toHaveBeenCalledWith({
+      endpoint: "http://minio:9000",
+      region: "us-east-1",
+      credentials: {
+        accessKeyId: "key",
+        secretAccessKey: "secret",
+      },
+      forcePathStyle: true,
+    });
   });
 });

@@ -32,7 +32,9 @@ src/
     ├── mime.ts           # MIME detection (extension + magic bytes)
     ├── s3.ts             # S3 client, key generation, URL builder
     ├── clipboard.ts      # Normalizes clipboard file value to a path
-    ├── clipboard-file.ts  # Writes the clipboard payload (any type) via osascript (macOS)
+    ├── clipboard-file.ts # Writes the clipboard payload (any type) via osascript (macOS)
+    ├── text-preview.ts   # Streaming text preview fetch with a 5 MB cap
+    ├── recent-count.ts   # Resolves the recents preference with a safe fallback
     └── history.ts        # upload history (LocalStorage-backed)
 ```
 

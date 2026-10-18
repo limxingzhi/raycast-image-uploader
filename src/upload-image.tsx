@@ -17,6 +17,7 @@ import { clipboardFileToPath } from "./lib/clipboard";
 import { extractClipboardFileToTempFile } from "./lib/clipboard-file";
 import { generateKey, uploadToS3, createS3Client } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
+import { resolveRecentCount } from "./lib/recent-count";
 
 export default function Command() {
   const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50 MB — reject files larger than this
@@ -30,7 +31,7 @@ export default function Command() {
   const uploadingRef = useRef(false);
   const fileDataRef = useRef<Buffer | null>(null);
   const prefs = getPreferenceValues<Preferences.UploadImage>();
-  const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
+  const recentCount = resolveRecentCount(prefs.recentImageCount);
   const s3ClientRef = useRef(createS3Client({
     endpoint: prefs.s3Endpoint,
     bucket: prefs.s3Bucket,

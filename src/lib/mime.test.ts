@@ -51,6 +51,30 @@ describe("typeFromExtension", () => {
   it("returns null for unknown extension", () => {
     expect(typeFromExtension("file.xyz")).toBeNull();
   });
+
+  it("maps common document, code, media, archive, and font extensions", () => {
+    const cases: Array<[string, string]> = [
+      ["report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+      ["sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+      ["slides.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+      ["data.csv", "text/csv"],
+      ["README.md", "text/markdown"],
+      ["app.js", "application/javascript"],
+      ["main.ts", "application/typescript"],
+      ["config.json", "application/json"],
+      ["config.yaml", "application/yaml"],
+      ["photo.webp", "image/webp"],
+      ["photo.heic", "image/heic"],
+      ["track.mp3", "audio/mpeg"],
+      ["movie.mp4", "video/mp4"],
+      ["font.woff2", "font/woff2"],
+      ["archive.7z", "application/x-7z-compressed"],
+    ];
+
+    for (const [path, mime] of cases) {
+      expect(typeFromExtension(path)).toBe(mime);
+    }
+  });
 });
 
 describe("extensionFromPath", () => {
@@ -72,6 +96,18 @@ describe("extensionFromPath", () => {
 
   it("returns null for a path ending in a dot", () => {
     expect(extensionFromPath("file.")).toBeNull();
+  });
+
+  it("handles a Windows-style path", () => {
+    expect(extensionFromPath("C:\\Users\\me\\photo.PNG")).toBe("png");
+  });
+
+  it("returns only the final extension for multi-dot names", () => {
+    expect(extensionFromPath("archive.tar.gz")).toBe("gz");
+  });
+
+  it("ignores dots in directory names", () => {
+    expect(extensionFromPath("/Users/me.dir/photo")).toBeNull();
   });
 });
 
@@ -102,6 +138,19 @@ describe("extensionFromMime", () => {
 
   it("strips parameters from MIME type", () => {
     expect(extensionFromMime("image/png; charset=utf-8")).toBe("png");
+  });
+
+  it("lowercases the MIME type before lookup", () => {
+    expect(extensionFromMime("IMAGE/PNG")).toBe("png");
+  });
+
+  it("maps common non-image MIME types", () => {
+    expect(extensionFromMime("text/html")).toBe("html");
+    expect(extensionFromMime("application/javascript")).toBe("js");
+    expect(extensionFromMime("application/yaml")).toBe("yaml");
+    expect(extensionFromMime("audio/mp4")).toBe("m4a");
+    expect(extensionFromMime("font/woff2")).toBe("woff2");
+    expect(extensionFromMime("text/typescript-jsx")).toBe("tsx");
   });
 });
 
@@ -156,6 +205,52 @@ describe("typeFromContent", () => {
     const buf = new Uint8Array([0x00, 0x00, 0x00, 0x01, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
     expect(typeFromContent(buf)).toBeNull();
   });
+
+  it("detects WebP from magic bytes", () => {
+    const buf = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]);
+    expect(typeFromContent(buf)).toBe("image/webp");
+  });
+
+  it("detects little- and big-endian TIFF from magic bytes", () => {
+    expect(typeFromContent(new Uint8Array([0x49, 0x49, 0x2a, 0x00]))).toBe("image/tiff");
+    expect(typeFromContent(new Uint8Array([0x4d, 0x4d, 0x00, 0x2a]))).toBe("image/tiff");
+  });
+
+  it("detects BMP from magic bytes", () => {
+    expect(typeFromContent(new Uint8Array([0x42, 0x4d]))).toBe("image/bmp");
+  });
+
+  it("detects HEIC from a valid ftyp box", () => {
+    const buf = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]);
+    expect(typeFromContent(buf)).toBe("image/heic");
+  });
+
+  it("detects AVIF from a valid ftyp box", () => {
+    const buf = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
+    expect(typeFromContent(buf)).toBe("image/avif");
+  });
+
+  it("detects MP3 from an ID3 tag", () => {
+    expect(typeFromContent(new Uint8Array([0x49, 0x44, 0x33]))).toBe("audio/mpeg");
+  });
+
+  it("detects WAV from magic bytes", () => {
+    const buf = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45]);
+    expect(typeFromContent(buf)).toBe("audio/wav");
+  });
+
+  it("detects OGG from magic bytes", () => {
+    expect(typeFromContent(new Uint8Array([0x4f, 0x67, 0x67, 0x53]))).toBe("audio/ogg");
+  });
+
+  it("detects MP4 from a valid ftyp box", () => {
+    const buf = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+    expect(typeFromContent(buf)).toBe("video/mp4");
+  });
+
+  it("returns null for a single-byte buffer", () => {
+    expect(typeFromContent(new Uint8Array([0x89]))).toBeNull();
+  });
 });
 
 describe("isTextPreviewable", () => {
@@ -201,5 +296,27 @@ describe("isTextPreviewable", () => {
 
   it("returns false for video/mp4", () => {
     expect(isTextPreviewable("video/mp4")).toBe(false);
+  });
+
+  it("returns true for other structured text types", () => {
+    for (const mime of [
+      "text/csv",
+      "text/typescript-jsx",
+      "application/xml",
+      "application/yaml",
+      "application/toml",
+    ]) {
+      expect(isTextPreviewable(mime)).toBe(true);
+    }
+  });
+
+  it("returns false for document and binary types", () => {
+    for (const mime of [
+      "application/msword",
+      "application/octet-stream",
+      "font/woff2",
+    ]) {
+      expect(isTextPreviewable(mime)).toBe(false);
+    }
   });
 });

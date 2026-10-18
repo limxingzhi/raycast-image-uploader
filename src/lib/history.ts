@@ -19,7 +19,8 @@ export function createHistoryManager(
     const raw = await storage.getItem(STORAGE_KEY);
     if (!raw) return [];
     try {
-      return JSON.parse(raw) as HistoryEntry[];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
     } catch {
       return [];
     }
