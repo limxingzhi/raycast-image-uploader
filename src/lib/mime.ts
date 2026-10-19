@@ -99,6 +99,7 @@ const EXT_TO_MIME: Record<string, string> = {
 
 const MIME_TO_EXT: Record<string, string> = {};
 
+// Reverse lookup for keys when only the MIME type is known. First extension wins.
 for (const [ext, mime] of Object.entries(EXT_TO_MIME)) {
   if (!MIME_TO_EXT[mime]) {
     MIME_TO_EXT[mime] = ext;
@@ -114,6 +115,7 @@ const MAGIC: Array<{ mime: string; match: (h: Uint8Array) => boolean }> = [
   { mime: "image/tiff", match: (h) => (h[0] === 0x49 && h[1] === 0x49 && h[2] === 0x2a && h[3] === 0x00) || (h[0] === 0x4d && h[1] === 0x4d && h[2] === 0x00 && h[3] === 0x2a) },
   { mime: "image/bmp", match: (h) => h[0] === 0x42 && h[1] === 0x4d },
   { mime: "image/heic", match: (h) => {
+    // HEIC and AVIF share the ISO BMFF "ftyp" box; the brand at bytes 8-11 tells them apart.
     const size = (h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3];
     return size >= 12 && h[4] === 0x66 && h[5] === 0x74 && h[6] === 0x79 && h[7] === 0x70 && h[8] === 0x68 && h[9] === 0x65 && h[10] === 0x69 && h[11] === 0x63;
   } },
@@ -128,17 +130,23 @@ const MAGIC: Array<{ mime: string; match: (h: Uint8Array) => boolean }> = [
   { mime: "audio/wav", match: (h) => h[0] === 0x52 && h[1] === 0x49 && h[2] === 0x46 && h[3] === 0x46 && h[8] === 0x57 && h[9] === 0x41 && h[10] === 0x56 && h[11] === 0x45 },
   { mime: "audio/ogg", match: (h) => h[0] === 0x4f && h[1] === 0x67 && h[2] === 0x67 && h[3] === 0x53 },
   { mime: "video/mp4", match: (h) => {
+    // Any ISO BMFF file (mp4/mov/m4a) starts with an "ftyp" box.
     const size = (h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3];
     return size >= 12 && h[4] === 0x66 && h[5] === 0x74 && h[6] === 0x79 && h[7] === 0x70;
   } },
 ];
 
-export function typeFromExtension(path: string): string | null {
+/** Lowercased file extension (without the dot) from a path, or null if there is none. */
+export function extensionFromPath(path: string): string | null {
   const last = path.replace(/^.*[/\\]/, "").toLowerCase();
   const dot = last.lastIndexOf(".");
   if (dot === -1 || dot === last.length - 1) return null;
-  const ext = last.slice(dot + 1);
-  return EXT_TO_MIME[ext] ?? null;
+  return last.slice(dot + 1);
+}
+
+export function typeFromExtension(path: string): string | null {
+  const ext = extensionFromPath(path);
+  return ext ? EXT_TO_MIME[ext] ?? null : null;
 }
 
 /** Detect MIME type from file content (magic bytes). Returns null if unknown. */
@@ -153,11 +161,13 @@ export function typeFromContent(data: Uint8Array): string | null {
 }
 
 export function extensionFromMime(mimeType: string): string {
+  // Strip parameters such as "; charset=utf-8" before looking up the extension.
   const clean = mimeType.split(";")[0].trim().toLowerCase();
   return MIME_TO_EXT[clean] ?? "bin";
 }
 
 const TEXT_PREVIEWABLE = new Set([
+  // Non-text/* MIME types that still hold readable source, markup, or config.
   "application/javascript",
   "application/json",
   "application/typescript",

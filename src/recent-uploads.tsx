@@ -13,59 +13,36 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
 import { typeFromExtension, isTextPreviewable } from "./lib/mime";
+import { fetchTextPreview } from "./lib/text-preview";
+import { resolveRecentCount } from "./lib/recent-count";
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
 }
 
-const MAX_PREVIEW_SIZE = 5 * 1024 * 1024; // 5 MB — skip text previews for larger files
-
-/** Fetch a text preview, capping the response body at MAX_PREVIEW_SIZE bytes. */
-async function fetchTextPreview(
-  entry: HistoryEntry,
-  signal: AbortSignal,
-): Promise<string | null> {
-  const r = await fetch(entry.url, { signal });
-  if (!r.ok || !r.body) return null;
-  const reader = r.body.getReader();
-  const decoder = new TextDecoder();
-  let result = "";
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > MAX_PREVIEW_SIZE) return null; // too large, abort
-      result += decoder.decode(value, { stream: true });
-    }
-  } finally {
-    reader.cancel().catch(() => {});
-  }
-  return result;
-}
-
 export default function RecentUploads() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [previews, setPreviews] = useState<Record<string, string>>({}); // Preview markdown keyed by URL.
   const prefs = getPreferenceValues<Preferences.RecentUploads>();
-  const recentCount = parseInt(prefs.recentImageCount, 10) || 50;
+  const recentCount = resolveRecentCount(prefs.recentImageCount);
   const historyRef = useRef(createHistoryManager(
     {
       getItem: (k) => LocalStorage.getItem<string>(k),
       setItem: (k, v) => LocalStorage.setItem(k, v),
     },
     recentCount,
-  ));
+  )); // One manager per command; the real LocalStorage adapter is injected here.
 
   useEffect(() => {
     const abort = new AbortController();
     let mounted = true;
 
+    // Load history once, then fetch previews in the background.
     async function load() {
       const all = await historyRef.current.getAll();
       if (!mounted) return;
+      // Render the list immediately; previews can arrive later.
       setEntries(all);
       setIsLoading(false);
 
@@ -73,10 +50,12 @@ export default function RecentUploads() {
       for (const entry of all) {
         const mime = typeFromExtension(entry.filename);
         if (mime && isTextPreviewable(mime)) {
+          // Each fetch is independent; failures simply leave the metadata view.
           fetchTextPreview(entry, abort.signal)
             .then((text) => {
               if (!text || !mounted) return;
               const ext = entry.filename.split(".").pop()?.toLowerCase() || "";
+              // Fence the text so file content cannot render as markdown.
               const md = `\`\`\`${ext}\n${text}\n\`\`\``;
               setPreviews((prev) => ({ ...prev, [entry.url]: md }));
             })
@@ -90,11 +69,13 @@ export default function RecentUploads() {
 
     return () => {
       mounted = false;
+      // Cancel any preview downloads still in flight.
       abort.abort();
     };
   }, []);
 
   async function handleDelete(url: string, timestamp: number) {
+    // Resolve the entry by identity; a list index can shift if history changes.
     const all = await historyRef.current.getAll();
     const index = all.findIndex((e) => e.url === url && e.timestamp === timestamp);
     if (index === -1) return;
@@ -108,6 +89,7 @@ export default function RecentUploads() {
       return;
     }
     await historyRef.current.remove(index);
+    // Re-read after the write so the UI matches what is stored.
     setEntries(await historyRef.current.getAll());
     await showToast({ style: Toast.Style.Success, title: "Deleted from history" });
   }
@@ -125,6 +107,7 @@ export default function RecentUploads() {
             id={`${entry.url}-${entry.timestamp}`}
             title={entry.filename}
             icon={{
+              // The object itself doubles as the icon for images on public buckets.
               source: typeFromExtension(entry.filename)?.startsWith("image/") ? entry.url : Icon.Document,
               tooltip: entry.filename,
             }}
@@ -136,7 +119,8 @@ export default function RecentUploads() {
                 markdown={
                   typeFromExtension(entry.filename)?.startsWith("image/")
                     ? `![${entry.filename}](${entry.url})`
-                    : previews[entry.url] ?? `# ${entry.filename}\n\n[Open in Browser](${entry.url})`
+                    : // Text uses the fetched preview; everything else links out.
+                      previews[entry.url] ?? `# ${entry.filename}\n\n[Open in Browser](${entry.url})`
                 }
                 metadata={
                   <List.Item.Detail.Metadata>

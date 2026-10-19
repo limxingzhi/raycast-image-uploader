@@ -2,8 +2,18 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
 import { extensionFromMime } from "./mime";
 
-export function generateKey(mimeType: string): string {
-  const ext = extensionFromMime(mimeType);
+/**
+ * Builds a `{uuid}.{ext}` object key. `sourceExtension` (from the original file
+ * path) wins when it is a sane extension, so files whose type is not in the MIME
+ * table keep their real extension instead of becoming `.bin`.
+ */
+export function generateKey(
+  mimeType: string,
+  sourceExtension?: string | null,
+): string {
+  const sanitized = sourceExtension?.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  // Keep the key URL-safe; fall back to the MIME table when the source has no usable extension.
+  const ext = sanitized ? sanitized : extensionFromMime(mimeType);
   const uuid = randomUUID();
   return `${uuid}.${ext}`;
 }
@@ -14,10 +24,10 @@ export function buildObjectUrl(
   key: string,
   pathStyle = true,
 ): string {
-  const base = endpoint.replace(/\/+$/, "");
+  const base = endpoint.replace(/\/+$/, ""); // Avoid a double slash in the final URL.
   return pathStyle
-    ? `${base}/${bucket}/${key}`
-    : `${base.replace("://", `://${bucket}.`)}/${key}`;
+    ? `${base}/${bucket}/${key}` // Path style: endpoint/bucket/key.
+    : `${base.replace("://", `://${bucket}.`)}/${key}`; // Virtual-hosted: bucket.endpoint/key.
 }
 
 export interface S3Config {
@@ -30,11 +40,12 @@ export interface S3Config {
 export function createS3Client(config: S3Config): S3Client {
   return new S3Client({
     endpoint: config.endpoint,
-    region: "us-east-1",
+    region: "us-east-1", // Most S3-compatible backends ignore the region.
     credentials: {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,
     },
+    // Required by self-hosted endpoints that cannot serve virtual-hosted buckets.
     forcePathStyle: true,
   });
 }
@@ -45,7 +56,8 @@ async function performUpload(
   body: Buffer | Uint8Array,
   contentType: string,
   client?: S3Client,
-): Promise<string> {
+): Promise<void> {
+  // An injected client lets the command reuse one connection pool across uploads.
   const s3 = client ?? createS3Client(config);
   await s3.send(
     new PutObjectCommand({
@@ -55,17 +67,16 @@ async function performUpload(
       ContentType: contentType,
     }),
   );
-  return buildObjectUrl(config.endpoint, config.bucket, key);
 }
 
-export function uploadToS3Optimistic(
+/** Uploads the object and resolves with its public URL only after the PUT succeeds. */
+export async function uploadToS3(
   config: S3Config,
   key: string,
   body: Buffer | Uint8Array,
   contentType: string,
   client?: S3Client,
-): { url: string; upload: Promise<string> } {
-  const url = buildObjectUrl(config.endpoint, config.bucket, key);
-  const upload = performUpload(config, key, body, contentType, client);
-  return { url, upload };
+): Promise<string> {
+  await performUpload(config, key, body, contentType, client);
+  return buildObjectUrl(config.endpoint, config.bucket, key);
 }
