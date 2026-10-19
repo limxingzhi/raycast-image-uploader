@@ -34,6 +34,8 @@ src/
     ├── clipboard.ts      # Normalizes clipboard file value to a path
     ├── clipboard-file.ts # Writes the clipboard payload (any type) via osascript (macOS)
     ├── text-preview.ts   # Streaming text preview fetch with a 5 MB cap
+    ├── preview.ts        # Inline preview builder with a 5 MB image cap
+    ├── concurrency.ts    # Bounded-concurrency async map
     ├── recent-count.ts   # Resolves the recents preference with a safe fallback
     └── history.ts        # upload history (LocalStorage-backed)
 ```
@@ -41,7 +43,7 @@ src/
 ### Key patterns
 
 - **Copy after upload**: the object URL is computed after a successful PUT and only then copied to the clipboard. A failed upload leaves the previous clipboard contents intact and does not write a history entry.
-- **S3Client reuse**: The S3 client is created once per command and reused across uploads via a ref, avoiding TLS handshake overhead.
+- **S3Client reuse**: The S3 client is created once per command and reused across uploads, avoiding TLS handshake overhead.
 - **Storage adapter pattern**: History uses an injectable `StorageAdapter` interface, making it testable without Raycast's `LocalStorage`.
 - **Path-style URLs**: `forcePathStyle: true` is the default, required for self-hosted S3-compatible backends like MinIO.
 
@@ -52,7 +54,7 @@ Copies a file from your clipboard, uploads it to your configured S3 bucket, and,
 
 If the upload fails, the clipboard is left untouched, no history entry is written, and a failure toast is shown.
 
-If "Upload Without Asking" is disabled (default), you'll see a confirmation dialog before the upload starts.
+If "Upload Without Asking" is disabled (default), the preview view offers an Upload action instead of uploading automatically. Inline images larger than 5 MB are shown as metadata rather than a data URI.
 
 ### Recent Uploads
 Browse your upload history with inline previews. Every uploaded file type is listed, not just images. Images render as thumbnails, text/code files show syntax-highlighted content, and other files show metadata. Copy URLs, open in browser, or delete entries from history using keyboard shortcuts (⌘Y, ⌘O, ⌘D).

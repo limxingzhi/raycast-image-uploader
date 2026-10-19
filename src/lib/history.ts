@@ -27,6 +27,20 @@ export function createHistoryManager(
   storage: StorageAdapter,
   maxCount: number,
 ) {
+  // Mutations are read-modify-write, so they must not interleave or concurrent
+  // adds can overwrite each other and identity removal can read a stale list.
+  let mutationQueue: Promise<unknown> = Promise.resolve();
+
+  function enqueueMutation<T>(task: () => Promise<T>): Promise<T> {
+    const run = mutationQueue.then(task, task);
+    // Keep the queue alive even if this mutation rejects.
+    mutationQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   async function getAll(): Promise<HistoryEntry[]> {
     const raw = await storage.getItem(STORAGE_KEY);
     if (!raw) return [];
@@ -39,20 +53,29 @@ export function createHistoryManager(
     }
   }
 
-  async function add(url: string, filename: string): Promise<void> {
-    const entries = await getAll();
-    const entry: HistoryEntry = { url, filename, timestamp: Date.now() };
-    // Newest first, then trim to the count captured when the manager was created.
-    entries.unshift(entry);
-    const trimmed = entries.slice(0, maxCount);
-    await storage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+  function add(url: string, filename: string): Promise<void> {
+    return enqueueMutation(async () => {
+      const entries = await getAll();
+      const entry: HistoryEntry = { url, filename, timestamp: Date.now() };
+      // Newest first, then trim to the count captured when the manager was created.
+      entries.unshift(entry);
+      const trimmed = entries.slice(0, maxCount);
+      await storage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+    });
   }
 
-  async function remove(index: number): Promise<void> {
-    const entries = await getAll();
-    if (index < 0 || index >= entries.length) return; // Stale index: nothing to do.
-    entries.splice(index, 1);
-    await storage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  function remove(url: string, timestamp: number): Promise<void> {
+    return enqueueMutation(async () => {
+      const entries = await getAll();
+      // Identify the row by value; an index captured before an insert can point
+      // at a different upload by the time the user confirms the deletion.
+      const index = entries.findIndex(
+        (entry) => entry.url === url && entry.timestamp === timestamp,
+      );
+      if (index === -1) return; // Already gone: nothing to write.
+      entries.splice(index, 1);
+      await storage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    });
   }
 
   return { getAll, add, remove };

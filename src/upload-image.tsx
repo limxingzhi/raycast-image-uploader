@@ -17,6 +17,7 @@ import { clipboardFileToPath } from "./lib/clipboard";
 import { extractClipboardFileToTempFile } from "./lib/clipboard-file";
 import { generateKey, uploadToS3, createS3Client } from "./lib/s3";
 import { createHistoryManager } from "./lib/history";
+import { buildFilePreview } from "./lib/preview";
 import { resolveRecentCount } from "./lib/recent-count";
 
 export default function Command() {
@@ -35,19 +36,25 @@ export default function Command() {
   const fileDataRef = useRef<Buffer | null>(null); // Survives failures so a retry reuses the same bytes.
   const prefs = getPreferenceValues<Preferences.UploadImage>();
   const recentCount = resolveRecentCount(prefs.recentImageCount);
-  const s3ClientRef = useRef(createS3Client({
-    endpoint: prefs.s3Endpoint,
-    bucket: prefs.s3Bucket,
-    accessKeyId: prefs.s3AccessKey,
-    secretAccessKey: prefs.s3SecretKey,
-  })); // Reused across uploads so each PUT does not pay for a new TLS handshake.
-  const historyRef = useRef(createHistoryManager(
-    {
-      getItem: (k) => LocalStorage.getItem<string>(k),
-      setItem: (k, v) => LocalStorage.setItem(k, v),
-    },
-    recentCount,
-  )); // The real LocalStorage adapter is injected here; tests pass a mock instead.
+  // Lazy state initializers run once per mount; passing the call to useRef
+  // would still construct a new client and manager on every render.
+  const [s3Client] = useState(() =>
+    createS3Client({
+      endpoint: prefs.s3Endpoint,
+      bucket: prefs.s3Bucket,
+      accessKeyId: prefs.s3AccessKey,
+      secretAccessKey: prefs.s3SecretKey,
+    }),
+  ); // Reused across uploads so each PUT does not pay for a new TLS handshake.
+  const [history] = useState(() =>
+    createHistoryManager(
+      {
+        getItem: (k) => LocalStorage.getItem<string>(k),
+        setItem: (k, v) => LocalStorage.setItem(k, v),
+      },
+      recentCount,
+    ),
+  ); // The real LocalStorage adapter is injected here; tests pass a mock instead.
 
   useEffect(() => {
     mountedRef.current = true;
@@ -106,18 +113,7 @@ export default function Command() {
             typeFromExtension(resolved) ?? typeFromContent(new Uint8Array(data)) ?? "application/octet-stream";
           setMimeType(detected);
 
-          if (detected.startsWith("image/")) {
-            // Inline data URI so the Detail view can render the image itself.
-            const base64 = data.toString("base64");
-            setPreview(`data:${detected};base64,${base64}`);
-          } else if (!data.includes(0) && data.length > 0) {
-            // Text content — render in code fence to prevent markdown injection
-            const content = data.toString("utf-8");
-            const ext = resolved.split("/").pop()?.toLowerCase() || "";
-            setPreview(`\`\`\`${ext}\n${content}\n\`\`\``);
-          } else {
-            setPreview("");
-          }
+          setPreview(buildFilePreview(data, detected, resolved));
 
           if (prefs.uploadWithoutAsking) {
             // Skip the confirmation UI and upload as soon as the payload is ready.
@@ -181,14 +177,14 @@ export default function Command() {
           key,
           fileData,
           detected,
-          s3ClientRef.current,
+          s3Client,
         );
 
         fileDataRef.current = null; // Release the buffer; the bytes are safely in S3.
 
         // Only publish the URL once the object exists in S3.
         await Clipboard.copy({ text: url });
-        await historyRef.current.add(url, key);
+        await history.add(url, key);
         await showToast({
           style: Toast.Style.Success,
           title: "Uploaded",
@@ -211,7 +207,7 @@ export default function Command() {
         }
       }
     },
-    [prefs],
+    [prefs, s3Client, history],
   );
 
   const handleUpload = useCallback(async () => {

@@ -18,6 +18,15 @@ function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   });
 }
 
+function streamOfBytes(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+}
+
 function responseWith(body: ReadableStream<Uint8Array> | null, ok = true): Response {
   return { ok, body } as Response;
 }
@@ -100,6 +109,20 @@ describe("fetchTextPreview", () => {
 
     expect(result).toBeNull();
     expect(cancel).toHaveBeenCalled();
+  });
+
+  it("preserves a multi-byte character split across chunks", async () => {
+    const bytes = new TextEncoder().encode("café");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseWith(streamOfBytes([bytes.slice(0, 4), bytes.slice(4)])),
+      ),
+    );
+
+    const result = await fetchTextPreview(entry, new AbortController().signal);
+
+    expect(result).toBe("café");
   });
 
   it("uses a 5 MB default cap", () => {

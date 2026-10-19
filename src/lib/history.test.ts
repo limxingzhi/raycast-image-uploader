@@ -181,39 +181,41 @@ describe("addEntry", () => {
 });
 
 describe("remove", () => {
-  it("removes entry at given index", async () => {
+  it("removes the entry matching url and timestamp", async () => {
     const storage = createMockStorage();
     const mgr = createHistoryManager(storage, 50);
     await mgr.add("http://example.com/a.png", "a.png");
     await mgr.add("http://example.com/b.png", "b.png");
     await mgr.add("http://example.com/c.png", "c.png");
-    // entries are [c, b, a] (newest first)
-    await mgr.remove(1);
-    const result = await mgr.getAll();
-    expect(result).toHaveLength(2);
-    expect(result[0].url).toBe("http://example.com/c.png");
-    expect(result[1].url).toBe("http://example.com/a.png");
+    const before = await mgr.getAll(); // entries are [c, b, a] (newest first)
+    const target = before[1];
+
+    await mgr.remove(target.url, target.timestamp);
+
+    expect(await mgr.getAll()).toEqual([before[0], before[2]]);
   });
 
-  it("removes first entry", async () => {
+  it("keeps entries whose url matches but timestamp differs", async () => {
+    const storage = createMockStorage();
+    const older = { url: "http://example.com/a.png", filename: "a.png", timestamp: 1000 };
+    const newer = { url: "http://example.com/a.png", filename: "a.png", timestamp: 2000 };
+    await storage.setItem("upload-history", JSON.stringify([newer, older]));
+    const mgr = createHistoryManager(storage, 50);
+
+    await mgr.remove(older.url, older.timestamp);
+
+    expect(await mgr.getAll()).toEqual([newer]);
+  });
+
+  it("removes by identity after another upload was inserted", async () => {
     const storage = createMockStorage();
     const mgr = createHistoryManager(storage, 50);
     await mgr.add("http://example.com/a.png", "a.png");
+    const [target] = await mgr.getAll();
     await mgr.add("http://example.com/b.png", "b.png");
-    // entries are [b, a]
-    await mgr.remove(0);
-    const result = await mgr.getAll();
-    expect(result).toHaveLength(1);
-    expect(result[0].url).toBe("http://example.com/a.png");
-  });
 
-  it("removes last entry", async () => {
-    const storage = createMockStorage();
-    const mgr = createHistoryManager(storage, 50);
-    await mgr.add("http://example.com/a.png", "a.png");
-    await mgr.add("http://example.com/b.png", "b.png");
-    // entries are [b, a]
-    await mgr.remove(1);
+    await mgr.remove(target.url, target.timestamp);
+
     const result = await mgr.getAll();
     expect(result).toHaveLength(1);
     expect(result[0].url).toBe("http://example.com/b.png");
@@ -223,42 +225,63 @@ describe("remove", () => {
     const storage = createMockStorage();
     const mgr = createHistoryManager(storage, 50);
     await mgr.add("http://example.com/a.png", "a.png");
-    await mgr.remove(0);
+    const [target] = await mgr.getAll();
+    await mgr.remove(target.url, target.timestamp);
     const raw = storage._getRaw("upload-history");
     expect(JSON.parse(raw!)).toEqual([]);
-  });
-
-  it("does nothing when index is out of bounds (negative)", async () => {
-    const storage = createMockStorage();
-    const mgr = createHistoryManager(storage, 50);
-    await mgr.add("http://example.com/a.png", "a.png");
-    await mgr.remove(-1);
-    const result = await mgr.getAll();
-    expect(result).toHaveLength(1);
-  });
-
-  it("does nothing when index is out of bounds (too large)", async () => {
-    const storage = createMockStorage();
-    const mgr = createHistoryManager(storage, 50);
-    await mgr.add("http://example.com/a.png", "a.png");
-    await mgr.remove(100);
-    const result = await mgr.getAll();
-    expect(result).toHaveLength(1);
   });
 
   it("does not write when removing from an empty history", async () => {
     const storage = createMockStorage();
     const mgr = createHistoryManager(storage, 50);
-    await mgr.remove(0);
+    await mgr.remove("http://example.com/missing.png", 1);
     expect(storage.setItem).not.toHaveBeenCalled();
   });
 
-  it("does not rewrite storage for an out-of-bounds index", async () => {
+  it("does not rewrite storage when the identity is missing", async () => {
     const storage = createMockStorage();
     const mgr = createHistoryManager(storage, 50);
     await mgr.add("http://example.com/a.png", "a.png");
     vi.mocked(storage.setItem).mockClear();
-    await mgr.remove(5);
+
+    await mgr.remove("http://example.com/a.png", 12345);
+
     expect(storage.setItem).not.toHaveBeenCalled();
+    expect(await mgr.getAll()).toHaveLength(1);
+  });
+});
+
+describe("concurrent mutations", () => {
+  it("keeps every entry when adds overlap", async () => {
+    const storage = createMockStorage();
+    const mgr = createHistoryManager(storage, 50);
+
+    await Promise.all([
+      mgr.add("http://example.com/a.png", "a.png"),
+      mgr.add("http://example.com/b.png", "b.png"),
+      mgr.add("http://example.com/c.png", "c.png"),
+    ]);
+
+    const urls = (await mgr.getAll()).map((entry) => entry.url).sort();
+    expect(urls).toEqual([
+      "http://example.com/a.png",
+      "http://example.com/b.png",
+      "http://example.com/c.png",
+    ]);
+  });
+
+  it("does not lose an insert that races with a removal", async () => {
+    const storage = createMockStorage();
+    const mgr = createHistoryManager(storage, 50);
+    await mgr.add("http://example.com/a.png", "a.png");
+    const [target] = await mgr.getAll();
+
+    await Promise.all([
+      mgr.add("http://example.com/b.png", "b.png"),
+      mgr.remove(target.url, target.timestamp),
+    ]);
+
+    const urls = (await mgr.getAll()).map((entry) => entry.url);
+    expect(urls).toEqual(["http://example.com/b.png"]);
   });
 });

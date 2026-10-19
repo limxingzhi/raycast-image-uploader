@@ -24,6 +24,8 @@ export async function fetchTextPreview(
       // stream: true keeps a multi-byte character split across chunks intact.
       result += decoder.decode(value, { stream: true });
     }
+    // Flush any trailing bytes the streaming decoder held back.
+    result += decoder.decode();
   } finally {
     // Release the connection when we stop early or throw.
     reader.cancel().catch(() => {});

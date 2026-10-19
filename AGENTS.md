@@ -32,6 +32,10 @@ src/
     ├── history.test.ts   # Tests for history manager
     ├── text-preview.ts   # Streaming text preview fetch with a byte cap
     ├── text-preview.test.ts # Tests for the preview fetch and cap
+    ├── preview.ts        # Builds inline image/text previews with a size cap
+    ├── preview.test.ts   # Tests for preview classification and cap
+    ├── concurrency.ts    # Bounded-concurrency async map
+    ├── concurrency.test.ts # Tests for the concurrency limit
     ├── recent-count.ts   # Parses the recents preference with a safe fallback
     ├── recent-count.test.ts # Tests for preference parsing
     ├── clipboard.ts      # Normalizes Clipboard.read().file to a filesystem path
@@ -45,17 +49,18 @@ src/
 
 **Key generation:** `{uuid}.{ext}` — uses `crypto.randomUUID()`. The extension comes from the source path via `extensionFromPath` when it is usable, otherwise from the MIME type via `extensionFromMime` in `lib/mime.ts`. This keeps types missing from the MIME table (`.psd`, `.sketch`, ...) from collapsing to `.bin`.
 
-**History:** JSON array stored in Raycast `LocalStorage` under key `"upload-history"`. Capped at the "Recent Uploads Count" preference (5/10/25/50/100, default 50), enforced when an entry is added, newest first. The list renders every stored entry, so lowering the preference does not shrink existing history until the next upload. JSON.parse errors and non-array payloads return an empty array. Entries that are not objects with a string `url`/`filename` and a numeric `timestamp` are filtered out on read, so corrupt rows never reach the commands. Out-of-bounds index in remove() is a no-op.
+**History:** JSON array stored in Raycast `LocalStorage` under key `"upload-history"`. Capped at the "Recent Uploads Count" preference (5/10/25/50/100, default 50), enforced when an entry is added, newest first. The list renders every stored entry, so lowering the preference does not shrink existing history until the next upload. JSON.parse errors and non-array payloads return an empty array. Entries that are not objects with a string `url`/`filename` and a numeric `timestamp` are filtered out on read, so corrupt rows never reach the commands. `remove(url, timestamp)` deletes by identity (not list index), and mutations run through an in-manager promise queue so concurrent adds cannot overwrite each other.
 
 ## Key Patterns
 
-- **Storage adapter pattern:** `history.ts` takes a `StorageAdapter` interface (`getItem`/`setItem`) so it's testable without Raycast's `LocalStorage`. Commands inject the real adapter; tests inject a plain object mock. The history manager is created once per command in a `useRef`.
+- **Storage adapter pattern:** `history.ts` takes a `StorageAdapter` interface (`getItem`/`setItem`) so it's testable without Raycast's `LocalStorage`. Commands inject the real adapter; tests inject a plain object mock. The history manager is created once per mount with a lazy `useState` initializer.
 - **S3 config via preferences:** All S3 credentials come from Raycast preferences defined in `package.json`. The auto-generated `Preferences.UploadImage` and `Preferences.RecentUploads` types from `raycast-env.d.ts` are used directly — no manual Preference interfaces.
 - **`forcePathStyle: true`** on S3Client — required for self-hosted/S3-compatible endpoints that don't support virtual-hosted-style URLs. The `buildObjectUrl` function has a `pathStyle` parameter (default `true`) for URL-style parity.
 - **Region is hardcoded** to `"us-east-1"` in `createS3Client` — this is a placeholder since most S3-compatible backends ignore it.
-- **S3Client is reused** across uploads via a ref in the command component, avoiding TLS handshake overhead per upload.
+- **S3Client is reused** across uploads; it is created once per mount with a lazy `useState` initializer, avoiding TLS handshake overhead per upload and per render.
 - **Copy after upload:** `uploadToS3` in `lib/s3.ts` resolves with the URL only after the PUT succeeds. The command then copies the URL, records history, and shows the success toast. A failed upload never exposes a dead URL and leaves the clipboard untouched.
-- **Streaming text preview fetch:** `fetchTextPreview()` in `lib/text-preview.ts` uses `ReadableStream.getReader()` to accumulate chunks and aborts once `maxSize` (default `MAX_PREVIEW_SIZE`, 5 MB) is exceeded. This prevents OOM from servers that omit `content-length` or use chunked transfer encoding. The cap is injectable so tests can exercise it without allocating megabytes.
+- **Streaming text preview fetch:** `fetchTextPreview()` in `lib/text-preview.ts` uses `ReadableStream.getReader()` to accumulate chunks and aborts once `maxSize` (default `MAX_PREVIEW_SIZE`, 5 MB) is exceeded. This prevents OOM from servers that omit `content-length` or use chunked transfer encoding. The streaming decoder is flushed after the loop so a multi-byte character split at the end is preserved. Recent Uploads fetches previews through `mapWithConcurrency` (3 at a time).
+- **Bounded inline previews:** `buildFilePreview()` in `lib/preview.ts` inlines images only up to `MAX_INLINE_IMAGE_PREVIEW_SIZE` (5 MB) and classifies text by MIME, not just NUL bytes, so NUL-free PDFs stay metadata-only while extensionless plain text still previews.
 - **Sanitized error messages:** Full errors are logged via `console.error` but user-facing toasts show a generic message ("Check your S3 configuration and try again.") to prevent leaking internal paths, AWS endpoint URLs, or access key IDs in screenshots.
 - **Markdown injection prevention:** All file content previews are wrapped in fenced code blocks (` ``` `) regardless of file extension, preventing untrusted file content from rendering as markdown links, images, or other syntax.
 - **Faithful clipboard payload selection:** `CLIPBOARD_FILE_SCRIPT` (in `clipboard-file.ts`) runs three isolated stages so a failure in one still leaves the others usable: an existing file on the pasteboard (Finder copy, drag, promised file), then rich payloads, then an AppKit rasterize fallback. Payload classification uses `UTType` conformance (falling back to a static UTI→extension table) and picks the most faithful payload: a real document (PDF, DOCX, ZIP, ...) beats a rendered image, which beats plain text, since copying from a web page puts the image *and* its URL as text on the pasteboard. Only `public.tiff` renderings are re-encoded to PNG, since raw TIFF is needlessly large and must never be written under a `.png` name.
@@ -64,10 +69,10 @@ src/
 
 - Test runner: vitest (config in `vitest.config.ts`, test files match `src/**/*.test.{ts,tsx}`)
 - `upload-pipeline.test.ts` composes the real lib functions in the order the upload command calls them (extract → detect → key → history) and asserts what a PDF, an unmapped extension, an image, plain text, an archive, and a no-extension payload record in history. It is the closest testable seam to the command files.
-- `text-preview.test.ts` covers the streaming size cap, non-ok responses, missing bodies, abort-signal forwarding, and reader cancellation. `recent-count.test.ts` covers every dropdown preset plus missing, non-numeric, zero, and negative values.
+- `text-preview.test.ts` covers the streaming size cap, decoder flush across split multi-byte characters, non-ok responses, missing bodies, abort-signal forwarding, and reader cancellation. `preview.test.ts` covers the image cap and MIME-based text gating, `concurrency.test.ts` covers the bounded pool, and `recent-count.test.ts` covers every dropdown preset plus missing, non-numeric, zero, and negative values.
 - MIME tests in `mime.test.ts` cover extension-to-MIME, MIME-to-extension, content-based (magic byte) detection, and edge cases (no extension, unknown types)
 - History tests use a hand-rolled mock storage (`createMockStorage`) with `_getRaw` accessor for direct assertion
-- No test covers the command files themselves (upload-image.tsx, recent-uploads.tsx) — only the lib/ modules: mime, s3, history, clipboard, clipboard-file
+- No test covers the command files themselves (upload-image.tsx, recent-uploads.tsx) — only the lib/ modules: mime, s3, history, clipboard, clipboard-file, text-preview, preview, concurrency, recent-count
 
 ## Conventions
 
@@ -81,10 +86,9 @@ src/
 ## Gotchas
 
 - `Clipboard.read()` returns `file` as either a `file://` URL or a plain filesystem path, depending on how the content reached the clipboard. `url.fileURLToPath` throws `TypeError: Invalid URL` on a plain path, so always route through `clipboardFileToPath` in `lib/clipboard.ts`, which only converts actual file URLs.
-- `Clipboard.read()` returns `file` as either a `file://` URL or a plain filesystem path, depending on how the content reached the clipboard. `url.fileURLToPath` throws `TypeError: Invalid URL` on a plain path, so always route through `clipboardFileToPath` in `lib/clipboard.ts`, which only converts actual file URLs.
 - `Clipboard.read()` does NOT expose file *contents*; it only reports `text`, `html`, and a file reference. A screenshot (Cmd+Ctrl+Shift+4) and a PDF copied from Preview both arrive as pasteboard data with no `file`, so `Clipboard.read()` returns `{ text: "" }`. Such payloads are written out natively by `lib/clipboard-file.ts` via `osascript` (JXA). This is macOS-only and returns `null` if the pasteboard has no usable payload. Because the payload keeps its own type, a copied PDF lands in history as `{uuid}.pdf`, not as a rasterized PNG.
 - Dropdown preferences like `recentImageCount` are string literals (`"5" | "10" | ...`) — still `parseInt` before use. Checkbox preferences (e.g. `uploadWithoutAsking`) are booleans natively.
 - S3 object URL is constructed client-side as `{endpoint}/{bucket}/{key}` (path-style, default) or `{bucket}.{endpoint}/{key}` (virtual-hosted, `pathStyle: false`). There's no presigned URL or redirect. The bucket and objects must be publicly accessible for the URL to work.
-- The upload is not optimistic: the URL is copied only after the S3 PUT completes, and a failure releases the in-memory file buffer without clearing the clipboard.
+- The upload is not optimistic: the URL is copied only after the S3 PUT completes. A failure keeps the in-memory buffer so a retry sends the same bytes, and it does not clear the clipboard.
 - File content previews are always wrapped in fenced code blocks to prevent markdown injection — even `.md` files render as raw code rather than rendered markdown.
 - `fetchTextPreview` (`lib/text-preview.ts`) uses a streaming reader with a 5 MB cap. `r.text()` is never used directly, as S3 may omit `content-length` or use chunked encoding.
