@@ -9,6 +9,7 @@ import {
   Icon,
   confirmAlert,
   Alert,
+  Keyboard,
 } from "@raycast/api";
 import { useState, useEffect } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
@@ -153,12 +154,12 @@ export default function RecentUploads() {
                 <Action.CopyToClipboard
                   content={entry.url}
                   title="Copy URL"
-                  shortcut={{ key: "y", modifiers: ["cmd"] }}
+                  shortcut={Keyboard.Shortcut.Common.Copy}
                 />
                 <Action.OpenInBrowser
                   url={entry.url}
                   title="Open in Browser"
-                  shortcut={{ key: "o", modifiers: ["cmd"] }}
+                  shortcut={Keyboard.Shortcut.Common.Open}
                 />
                 <Action
                   title="Delete from History"
