@@ -9,6 +9,7 @@ import {
   Icon,
   confirmAlert,
   Alert,
+  Keyboard,
 } from "@raycast/api";
 import { useState, useEffect } from "react";
 import { createHistoryManager, HistoryEntry } from "./lib/history";
@@ -100,11 +101,45 @@ export default function RecentUploads() {
     await showToast({ style: Toast.Style.Success, title: "Deleted from history" });
   }
 
+  async function handleClear() {
+    const all = await history.getAll();
+    if (all.length === 0) return;
+    if (
+      !(await confirmAlert({
+        title: "Remove All from History",
+        message: `Remove all ${all.length} uploads from history? The files in S3 will not be deleted.`,
+        primaryAction: {
+          title: "Remove All",
+          style: Alert.ActionStyle.Destructive,
+        },
+      }))
+    ) {
+      return;
+    }
+    await history.clear();
+    // Re-read after the write so the UI matches what is stored.
+    setEntries(await history.getAll());
+    await showToast({
+      style: Toast.Style.Success,
+      title: "History cleared",
+    });
+  }
+
   return (
     <List
       isLoading={isLoading}
       isShowingDetail
       searchBarPlaceholder="Search recent uploads..."
+      actions={
+        <ActionPanel>
+          <Action
+            title="Remove All from History"
+            icon={Icon.Trash}
+            style={Action.Style.Destructive}
+            onAction={handleClear}
+          />
+        </ActionPanel>
+      }
     >
       <List.Section title="Recent Uploads">
         {entries.map((entry) => (
@@ -153,12 +188,12 @@ export default function RecentUploads() {
                 <Action.CopyToClipboard
                   content={entry.url}
                   title="Copy URL"
-                  shortcut={{ key: "y", modifiers: ["cmd"] }}
+                  shortcut={Keyboard.Shortcut.Common.Copy}
                 />
                 <Action.OpenInBrowser
                   url={entry.url}
                   title="Open in Browser"
-                  shortcut={{ key: "o", modifiers: ["cmd"] }}
+                  shortcut={Keyboard.Shortcut.Common.Open}
                 />
                 <Action
                   title="Delete from History"
@@ -167,6 +202,15 @@ export default function RecentUploads() {
                   style={Action.Style.Destructive}
                   onAction={() => handleDelete(entry.url, entry.timestamp)}
                 />
+                <ActionPanel.Section>
+                  <Action
+                    title="Remove All from History"
+                    shortcut={{ key: "d", modifiers: ["cmd", "shift"] }}
+                    icon={Icon.Trash}
+                    style={Action.Style.Destructive}
+                    onAction={handleClear}
+                  />
+                </ActionPanel.Section>
               </ActionPanel>
             }
           />

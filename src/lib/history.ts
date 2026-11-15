@@ -78,5 +78,13 @@ export function createHistoryManager(
     });
   }
 
-  return { getAll, add, remove };
+  function clear(): Promise<void> {
+    return enqueueMutation(async () => {
+      const entries = await getAll();
+      if (entries.length === 0) return; // Already empty: nothing to write.
+      await storage.setItem(STORAGE_KEY, JSON.stringify([]));
+    });
+  }
+
+  return { getAll, add, remove, clear };
 }

@@ -4,10 +4,15 @@ import { extensionFromMime } from "./mime";
 import { generateKey, buildObjectUrl, uploadToS3, createS3Client } from "./s3";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-vi.mock("@aws-sdk/client-s3", () => ({
-  S3Client: vi.fn(),
-  PutObjectCommand: vi.fn(),
-}));
+vi.mock("@aws-sdk/client-s3", () => {
+  const S3Client = vi.fn(function (this: { send: unknown }) {
+    this.send = vi.fn();
+  });
+  const PutObjectCommand = vi.fn(function (this: Record<string, unknown>) {
+    Object.assign(this, {});
+  });
+  return { S3Client, PutObjectCommand };
+});
 
 describe("generateKey", () => {
   it("generates a UUID key with png extension for image/png", () => {
@@ -131,7 +136,9 @@ describe("uploadToS3", () => {
           resolveSend = resolve;
         }),
     );
-    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+    vi.mocked(S3Client).mockImplementation(function () {
+      return { send: mockSend } as unknown as S3Client;
+    });
 
     const config: S3Config = {
       endpoint: "http://minio:9000",
@@ -157,7 +164,9 @@ describe("uploadToS3", () => {
 
   it("rejects instead of returning a URL when the upload fails", async () => {
     const mockSend = vi.fn().mockRejectedValue(new Error("access denied"));
-    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+    vi.mocked(S3Client).mockImplementation(function () {
+      return { send: mockSend } as unknown as S3Client;
+    });
 
     const config: S3Config = {
       endpoint: "http://minio:9000",
@@ -191,7 +200,9 @@ describe("uploadToS3", () => {
 
   it("sends bucket, key, body, and content type with the PUT", async () => {
     const mockSend = vi.fn().mockResolvedValue({});
-    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+    vi.mocked(S3Client).mockImplementation(function () {
+      return { send: mockSend } as unknown as S3Client;
+    });
     vi.mocked(PutObjectCommand).mockClear();
 
     const config: S3Config = {
@@ -214,7 +225,9 @@ describe("uploadToS3", () => {
 
   it("creates a client when none is provided", async () => {
     const mockSend = vi.fn().mockResolvedValue({});
-    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+    vi.mocked(S3Client).mockImplementation(function () {
+      return { send: mockSend } as unknown as S3Client;
+    });
     vi.mocked(S3Client).mockClear();
 
     const config: S3Config = {
@@ -250,7 +263,9 @@ describe("uploadToS3", () => {
 describe("createS3Client", () => {
   it("configures path-style access and static credentials", () => {
     const mockSend = vi.fn().mockResolvedValue({});
-    vi.mocked(S3Client).mockImplementation(() => ({ send: mockSend }) as unknown as S3Client);
+    vi.mocked(S3Client).mockImplementation(function () {
+      return { send: mockSend } as unknown as S3Client;
+    });
     vi.mocked(S3Client).mockClear();
 
     createS3Client({
