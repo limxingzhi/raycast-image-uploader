@@ -251,6 +251,43 @@ describe("remove", () => {
   });
 });
 
+describe("clear", () => {
+  it("empties the stored history", async () => {
+    const storage = createMockStorage();
+    const mgr = createHistoryManager(storage, 50);
+    await mgr.add("http://example.com/a.png", "a.png");
+    await mgr.add("http://example.com/b.png", "b.png");
+
+    await mgr.clear();
+
+    expect(await mgr.getAll()).toEqual([]);
+    expect(JSON.parse(storage._getRaw("upload-history")!)).toEqual([]);
+  });
+
+  it("does not write when the history is already empty", async () => {
+    const storage = createMockStorage();
+    const mgr = createHistoryManager(storage, 50);
+
+    await mgr.clear();
+
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("does not lose an insert that races with a clear", async () => {
+    const storage = createMockStorage();
+    const mgr = createHistoryManager(storage, 50);
+    await mgr.add("http://example.com/a.png", "a.png");
+
+    await Promise.all([
+      mgr.clear(),
+      mgr.add("http://example.com/b.png", "b.png"),
+    ]);
+
+    const urls = (await mgr.getAll()).map((entry) => entry.url);
+    expect(urls).toEqual(["http://example.com/b.png"]);
+  });
+});
+
 describe("concurrent mutations", () => {
   it("keeps every entry when adds overlap", async () => {
     const storage = createMockStorage();
